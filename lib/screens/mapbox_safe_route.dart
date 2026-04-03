@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:noor_new/services/route_risk_service.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -32,7 +33,12 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   bool isLoading = false;
   String? _routeDistance;
   String? _routeDuration;
-
+  
+  // ✅ Route risk scoring variables
+  List<Map<String, dynamic>> _routeOptions = [];
+  int _selectedRouteIndex = 0;
+  final RouteRiskService _routeRiskService = RouteRiskService();
+  
   final TextEditingController _sourceController = TextEditingController();
   final TextEditingController _destController = TextEditingController();
   List<Map<String, dynamic>> _sourceSuggestions = [];
@@ -56,7 +62,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   String? _currentETA;
   List<geo.Position> _journeyHistory = [];
 
-  // ✅ NEW: Risk heatmap variables
+  // ✅ Risk heatmap variables
   bool _showRiskHeatmap = false;
   List<Map<String, dynamic>> _heatmapData = [];
 
@@ -266,8 +272,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     if (origin != null && destination != null) {
       _drawRoute(origin!, destination!);
     }
-  }
-
+  }  
   Future<void> _addOriginMarker() async {
     if (mapboxMap == null || origin == null) return;
     final style = mapboxMap!.style;
@@ -337,55 +342,221 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     );
   }
 
+  // ✅ FULL UPDATED _drawRoute() with route alternatives + risk scoring
   Future<void> _drawRoute(Point start, Point end) async {
     if (mapboxMap == null || accessToken == null) return;
     setState(() => isLoading = true);
 
     try {
+      // ✅ Calculate direct distance between start/end (for detour penalty)
+      final directDistance = _calculateDistance(
+        Position(start.coordinates.lng, start.coordinates.lat),
+        Position(end.coordinates.lng, end.coordinates.lat),
+      );
+      print(
+        '📏 [DEBUG] Direct distance: ${directDistance.toStringAsFixed(2)} km',
+      );
+
+      // ✅ Fetch MULTIPLE routes (alternatives=true)
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/$_profile/'
         '${start.coordinates.lng},${start.coordinates.lat};'
         '${end.coordinates.lng},${end.coordinates.lat}?'
-        'geometries=geojson&overview=full&access_token=$accessToken',
+        'geometries=geojson&overview=full&access_token=$accessToken'
+        '&alternatives=true'
+        '&annotations=duration,distance',
       );
 
+      print('🔍 [DEBUG] Fetching routes: $url');
       final res = await http.get(url);
-      final data = jsonDecode(res.body);
-      if (data['routes'] == null || data['routes'].isEmpty) return;
 
-      final route = data['routes'][0];
-      final geometry = route['geometry'];
+      if (res.statusCode != 200) {
+        print('❌ [DEBUG] Route API error: ${res.statusCode}');
+        return;
+      }
+
+      final data = jsonDecode(res.body);
+
+      if (data['routes'] == null || data['routes'].isEmpty) {
+        print('❌ [DEBUG] No routes found');
+        return;
+      }
+
+      final List routes = data['routes'];
+      print('✅ [DEBUG] Found ${routes.length} route alternatives');
+
+      // ✅ Calculate risk for EACH route (with direct distance for detour penalty)
+      final List<Map<String, dynamic>> routeOptions = [];
+
+      for (int i = 0; i < routes.length; i++) {
+        final route = routes[i];
+        final geometry = route['geometry'];
+
+        // Extract coordinates from route geometry
+        final List<Map<String, double>> coordinates = _extractCoordinates(
+          geometry,
+        );
+
+        // Calculate risk for this route (with detour penalty)
+        final riskData = await _routeRiskService.calculateRouteRisk(
+          routeCoordinates: coordinates,
+          directDistanceKm: directDistance, // ✅ Pass direct distance
+        );
+
+        routeOptions.add({
+          'route_index': i,
+          'route': route,
+          'geometry': geometry,
+          'duration': route['duration'] as double,
+          'distance': route['distance'] as double,
+          'risk_score': riskData['risk_score'] as double,
+          'risk_level': riskData['risk_level'] as String,
+          'safe_percentage': riskData['safe_percentage'] as double,
+          'high_risk_segments': riskData['high_risk_segments'] as int,
+          'detour_factor': riskData['detour_factor'] as double,
+        });
+
+        print(
+          '🔍 [DEBUG] Route $i: ${route['duration'] / 60}min, '
+          'risk: ${riskData['risk_score'].toStringAsFixed(2)}, '
+          'detour: ${riskData['detour_factor'].toStringAsFixed(1)}x',
+        );
+      }
+
+      // ✅ IMPROVED: Label routes with proper logic
+      // Find the fastest route by duration
+      final fastestDuration = routeOptions
+          .map((r) => r['duration'] as double)
+          .reduce((a, b) => a < b ? a : b);
+
+      // Find the safest route by risk score  
+      final safestRisk = routeOptions
+          .map((r) => r['risk_score'] as double)
+          .reduce((a, b) => a < b ? a : b);
+
+      // Label each route
+      for (int i = 0; i < routeOptions.length; i++) {
+        final option = routeOptions[i];
+        final isFastest = option['duration'] == fastestDuration;
+        final isSafest = option['risk_score'] == safestRisk;
+
+        if (isFastest && isSafest) {
+          option['label'] = '🟢⚡ Best Overall';
+          option['label_color'] = Colors.teal;
+        } else if (isSafest) {
+          option['label'] = '🟢 Safest';
+          option['label_color'] = Colors.green;
+        } else if (isFastest) {
+          option['label'] = '⚡ Fastest';
+          option['label_color'] = Colors.orange;
+        } else {
+          option['label'] = '🟡 Balanced';
+          option['label_color'] = Colors.amber[700];
+        }
+        print('🏷️ [DEBUG] Route ${option['route_index']}: ${option['label']}');
+      }
+
+      // ✅ Sort: Safest first, then fastest (for default selection)
+      routeOptions.sort((a, b) {
+        // Primary: Risk score (lower is safer)
+        final riskCompare = a['risk_score'].compareTo(b['risk_score']);
+        if (riskCompare != 0) return riskCompare;
+        // Secondary: Duration (lower is faster)
+        return a['duration'].compareTo(b['duration']);
+      });
 
       if (!mounted) return;
       setState(() {
-        _routeDistance = '${(route['distance'] / 1000).toStringAsFixed(2)} km';
-        _routeDuration = '${(route['duration'] / 60).toStringAsFixed(0)} min';
+        _routeOptions = routeOptions;
+        _selectedRouteIndex = 0; // Default to safest
+        _routeDistance =
+            '${(routeOptions[0]['distance'] / 1000).toStringAsFixed(2)} km';
+        _routeDuration =
+            '${(routeOptions[0]['duration'] / 60).toStringAsFixed(0)} min';
       });
 
-      final style = mapboxMap!.style;
-      if (await style.styleLayerExists(_routeLayerId))
-        await style.removeStyleLayer(_routeLayerId);
-      if (await style.styleSourceExists(_routeSourceId))
-        await style.removeStyleSource(_routeSourceId);
+      // ✅ Draw the safest route by default
+      await _drawSelectedRoute();
+      print('✅ [DEBUG] Drew default route (index 0)');
 
-      await style.addSource(
-        GeoJsonSource(id: _routeSourceId, data: jsonEncode(geometry)),
-      );
-      await style.addLayer(
-        LineLayer(
-          id: _routeLayerId,
-          sourceId: _routeSourceId,
-          lineColor: Colors.teal.toARGB32(),
-          lineWidth: 5.0,
-          lineJoin: LineJoin.ROUND,
-          lineCap: LineCap.ROUND,
-        ),
-      );
-    } catch (e) {
-      debugPrint("Route error: $e");
+    } catch (e, stack) {
+      debugPrint("❌ Route error: $e");
+      debugPrint("❌ Stack: $stack");
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  // ✅ Helper: Extract coordinates from GeoJSON geometry
+  List<Map<String, double>> _extractCoordinates(dynamic geometry) {
+    final List<Map<String, double>> coordinates = [];
+    
+    if (geometry == null || geometry['coordinates'] == null) {
+      return coordinates;
+    }
+    
+    final coords = geometry['coordinates'] as List;
+    
+    for (var coord in coords) {
+      if (coord is List && coord.length >= 2) {
+        coordinates.add({
+          'lng': (coord[0] as num).toDouble(),
+          'lat': (coord[1] as num).toDouble(),
+        });
+      }
+    }
+    
+    return coordinates;
+  }
+
+  // ✅ Draw the currently selected route
+  Future<void> _drawSelectedRoute() async {
+    if (mapboxMap == null) return;
+    if (_routeOptions.isEmpty || _selectedRouteIndex >= _routeOptions.length) {
+      print('⚠️ [DEBUG] Cannot draw route: no options or invalid index');
+      return;
+    }
+    
+    final selectedRoute = _routeOptions[_selectedRouteIndex];
+    final geometry = selectedRoute['geometry'];
+    
+    if (geometry == null) {
+      print('❌ [DEBUG] No geometry for selected route');
+      return;
+    }
+    
+    final style = mapboxMap!.style;
+    
+    // Clean up existing route layer
+    if (await style.styleLayerExists(_routeLayerId)) {
+      await style.removeStyleLayer(_routeLayerId);
+    }
+    if (await style.styleSourceExists(_routeSourceId)) {
+      await style.removeStyleSource(_routeSourceId);
+    }
+
+    // Add new source and layer
+    await style.addSource(
+      GeoJsonSource(
+        id: _routeSourceId, 
+        data: jsonEncode(geometry),
+      ),
+    );
+    
+    final routeColor = (selectedRoute['label_color'] as Color?) ?? Colors.teal;
+    
+    await style.addLayer(
+      LineLayer(
+        id: _routeLayerId,
+        sourceId: _routeSourceId,
+        lineColor: routeColor.toARGB32(),
+        lineWidth: 6.0,
+        lineJoin: LineJoin.ROUND,
+        lineCap: LineCap.ROUND,
+      ),
+    );
+    
+    print('✅ [DEBUG] Drew route ${selectedRoute['route_index']}: ${selectedRoute['label']}');
   }
 
   Future<void> _clearRoute() async {
@@ -402,6 +573,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       _routeDuration = null;
       _showDestSuggestions = false;
       _destSuggestions = [];
+      // ✅ Also reset route options
+      _routeOptions = [];
+      _selectedRouteIndex = 0;
     });
   }
 
@@ -413,7 +587,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           locationSettings: const geo.LocationSettings(
             accuracy: geo.LocationAccuracy.high,
           ),
-          timeLimit: const Duration(seconds: 5),
         );
         locationLink =
             'http://maps.google.com/maps?q=${position.latitude},${position.longitude}';
@@ -488,7 +661,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     }
   }
 
-  // ✅ NEW: Load heatmap data from backend
+  // ✅ NEW: Load heatmap data
   Future<void> _loadHeatmapData() async {
     print('[DEBUG] Starting OFFLINE _loadHeatmapData()');
 
@@ -529,7 +702,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     }
   }
 
-  // ✅ NEW: Center camera on Mumbai when heatmap loads
+  // ✅ Center camera on Mumbai (unused but kept for reference)
   void _centerOnMumbai() {
     if (mapboxMap != null) {
       mapboxMap!.flyTo(
@@ -544,8 +717,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       );
     }
   }
-
- Future<void> _addHeatmapLayer() async {
+  Future<void> _addHeatmapLayer() async {
     print('🔥 [DEBUG] _addHeatmapLayer() with ${_heatmapData.length} points');
 
     if (mapboxMap == null || _heatmapData.isEmpty) {
@@ -583,7 +755,10 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
 
       // Add source
       await style.addSource(
-        GeoJsonSource(id: 'risk-source', data:jsonEncode(geojson)),
+        GeoJsonSource(
+          id: 'risk-source',
+          data: jsonEncode(geojson),
+        ),
       );
       print('✅ Source added');
 
@@ -599,69 +774,82 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       print('✅ Base layer added');
 
       // ✅ TUNED FOR ZOOM 11-12 (15km = 1/4 screen):
-      // Radius: Large enough to blend, small enough to not cover India
-      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-radius', [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        9, 25, // ✅ Visible but not overwhelming (India view)
-        10, 35, // ✅ Light coverage (West India)
-        11, 50, // ✅ ✅ PERFECT for 15km = 1/4 screen!
-        12, 65, // ✅ ✅ Great for city view
-        13, 75, // ✅ Balanced
-        14, 85, // ✅ Good for area view
-        15, 95, // ✅ Detailed neighborhood
-        16, 105, // ✅ Clear street-level detail
-        17, 115, // ✅ Red spots concentrated
-        18, 125, // ✅ Maximum detail
-      ]);
+      await style.setStyleLayerProperty(
+        'risk-heatmap',
+        'heatmap-radius',
+        [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          9, 25,   // ✅ Visible but not overwhelming (India view)
+          10, 35,  // ✅ Light coverage (West India)
+          11, 50,  // ✅ ✅ PERFECT for 15km = 1/4 screen!
+          12, 65,  // ✅ ✅ Great for city view
+          13, 75,  // ✅ Balanced
+          14, 85,  // ✅ Good for area view
+          15, 95,  // ✅ Detailed neighborhood
+          16, 105, // ✅ Clear street-level detail
+          17, 115, // ✅ Red spots concentrated
+          18, 125, // ✅ Maximum detail
+        ],
+      );
       print('✅ Dynamic radius applied (tuned for zoom 11-12)');
 
       // ✅ TUNED INTENSITY: Colors visible at zoom 11-12
-      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-intensity', [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        9, 0.25, // ✅ Light but visible (India view)
-        10, 0.35, // ✅ Visible gradient (West India)
-        11, 0.55, // ✅ ✅ PERFECT for 15km = 1/4 screen!
-        12, 0.75, // ✅ ✅ Great contrast for city view
-        13, 0.90, // ✅ Balanced
-        14, 1.05, // ✅ Strong colors
-        15, 1.20, // ✅ Clear neighborhood detail
-        16, 1.35, // ✅ Vibrant street-level
-        17, 1.50, // ✅ Red spots pop
-        18, 1.65, // ✅ Maximum visibility
-      ]);
+      await style.setStyleLayerProperty(
+        'risk-heatmap',
+        'heatmap-intensity',
+        [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          9, 0.25,  // ✅ Light but visible (India view)
+          10, 0.35, // ✅ Visible gradient (West India)
+          11, 0.55, // ✅ ✅ PERFECT for 15km = 1/4 screen!
+          12, 0.75, // ✅ ✅ Great contrast for city view
+          13, 0.90, // ✅ Balanced
+          14, 1.05, // ✅ Strong colors
+          15, 1.20, // ✅ Clear neighborhood detail
+          16, 1.35, // ✅ Vibrant street-level
+          17, 1.50, // ✅ Red spots pop
+          18, 1.65, // ✅ Maximum visibility
+        ],
+      );
       print('✅ Dynamic intensity applied (tuned for zoom 11-12)');
 
       // Set weight (risk-based coloring)
-      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-weight', [
-        'get',
-        'risk',
-      ]);
+      await style.setStyleLayerProperty(
+        'risk-heatmap',
+        'heatmap-weight',
+        ['get', 'risk'],
+      );
 
       // ✅ VIBRANT color gradient (visible at all zooms)
-      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-color', [
-        'interpolate',
-        ['linear'],
-        ['heatmap-density'],
-        0, 'rgba(34, 197, 94, 0.4)', // ✅ Green visible
-        0.25, 'rgba(234, 179, 8, 0.7)', // ✅ Yellow clear
-        0.5, 'rgba(249, 115, 22, 0.85)', // ✅ Orange strong
-        0.75, 'rgba(239, 68, 68, 0.92)', // ✅ Red very visible
-        1, 'rgba(127, 29, 29, 0.97)', // ✅ Dark red clear
-      ]);
+      await style.setStyleLayerProperty(
+        'risk-heatmap',
+        'heatmap-color',
+        [
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0, 'rgba(34, 197, 94, 0.4)',     // ✅ Green visible
+          0.25, 'rgba(234, 179, 8, 0.7)',   // ✅ Yellow clear
+          0.5, 'rgba(249, 115, 22, 0.85)',  // ✅ Orange strong
+          0.75, 'rgba(239, 68, 68, 0.92)',  // ✅ Red very visible
+          1, 'rgba(127, 29, 29, 0.97)',     // ✅ Dark red clear
+        ],
+      );
       print('✅ Color gradient applied (vibrant)');
 
       print('✅ Heatmap configured - visible at 15km = 1/4 screen!');
+
     } catch (e, stack) {
       print('❌ Error: $e');
       print('❌ Stack: $stack');
     }
   }
 
-  // ✅ NEW: Hide heatmap layer (called when zoomed out too far)
+  // ✅ Hide heatmap layer
   Future<void> _hideHeatmapLayer() async {
     if (mapboxMap == null) return;
 
@@ -675,32 +863,55 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       await style.removeStyleSource('risk-source');
       print('✅ Heatmap source hidden');
     }
-
-    // _isHeatmapHiddenDueToZoom = true;
   }
 
-  // ✅ NEW: Check if user entered high-risk zone
+  // ✅ Check if user entered high-risk zone
   Future<void> _checkRiskZone(geo.Position position) async {
-    if (!_showRiskHeatmap) return;
+    if (!_showRiskHeatmap || !_isJourneyActive) return;
 
-    // ✅ Get risk LOCALLY (no API call!)
     final riskData = _riskService.getRiskForLocation(
       position.latitude,
       position.longitude,
     );
 
-    if (riskData['risk_level'] == 'critical' ||
-        riskData['risk_level'] == 'high') {
+    // ✅ Show alert for critical/high risk
+    if (riskData['risk_level'] == 'critical') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
             children: [
               const Icon(Icons.warning, color: Colors.white),
               const SizedBox(width: 8),
-              Text('⚠️ High risk: ${riskData['area_name'] ?? 'This area'}'),
+              Expanded(
+                child: Text(
+                  '🚨 CRITICAL RISK: ${riskData['area_name'] ?? 'This area'}\n'
+                  'Stay alert & avoid if possible',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
             ],
           ),
-          backgroundColor: Colors.red,
+          backgroundColor: Colors.red[800],
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else if (riskData['risk_level'] == 'high') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.info, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '⚠️ High risk: ${riskData['area_name'] ?? 'This area'}\n'
+                  'Stay aware of surroundings',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange[800],
           duration: const Duration(seconds: 4),
         ),
       );
@@ -774,7 +985,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         locationSettings: const geo.LocationSettings(
           accuracy: geo.LocationAccuracy.high,
         ),
-        timeLimit: const Duration(seconds: 5),
       );
       final locationLink =
           'http://maps.google.com/maps?q=${position.latitude},${position.longitude}';
@@ -849,6 +1059,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     return '~$minutes min';
   }
 
+  // ✅ FIXED: Removed duplicate @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -860,7 +1071,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         ),
         backgroundColor: Colors.teal,
         actions: [
-          // ✅ NEW: Heatmap toggle button
+          // ✅ Heatmap toggle button
           IconButton(
             icon: Icon(
               _showRiskHeatmap ? Icons.thermostat : Icons.thermostat_outlined,
@@ -883,7 +1094,8 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             onStyleLoadedListener: (StyleLoadedEventData data) =>
                 _add3DBuildings(),
           ),
-          // Add this inside the Stack children, after MapWidget:
+          
+          // ✅ Heatmap hint
           if (_showRiskHeatmap)
             Positioned(
               bottom: 150,
@@ -903,8 +1115,12 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                 ),
               ),
             ),
+          
+          // ✅ Loading indicator
           if (isLoading)
             const Center(child: CircularProgressIndicator(color: Colors.teal)),
+          
+          // ✅ Search boxes
           Positioned(
             top: 20,
             left: 15,
@@ -940,6 +1156,125 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
               ],
             ),
           ),
+          
+          // ✅ NEW: Route options selector (show when multiple routes available)
+          if (_routeOptions.length > 1 &&
+              destination != null &&
+              !_isJourneyActive)
+            Positioned(
+              bottom: 180,
+              left: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black12, blurRadius: 10),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '🗺️ Choose Your Route',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ..._routeOptions.map((option) {
+                      final isSelected =
+                          _routeOptions.indexOf(option) == _selectedRouteIndex;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedRouteIndex = _routeOptions.indexOf(option);
+                          });
+                          _drawSelectedRoute();
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.teal.withOpacity(0.1)
+                                : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.teal
+                                  : Colors.grey[300]!,
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                color: isSelected ? Colors.teal : Colors.grey,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          option['label'] ?? 'Route',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: option['label_color'],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${(option['duration'] / 60).toStringAsFixed(0)} min',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${(option['distance'] / 1000).toStringAsFixed(1)} km • '
+                                      '${option['safe_percentage'].toStringAsFixed(0)}% safe zones',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    // ✅ Show detour warning if route is much longer
+                                    if ((option['detour_factor'] as double? ?? 1.0) > 1.5)
+                                      Text(
+                                        '⚠️ ${(((option['detour_factor'] as double) - 1) * 100).toStringAsFixed(0)}% longer than direct',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.orange,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+            ),
+          
+          // ✅ Transport mode buttons
           Positioned(
             bottom: 110,
             left: 25,
@@ -963,6 +1298,8 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
               ),
             ),
           ),
+          
+          // ✅ Start Journey button (only show when destination is set)
           if (destination != null)
             Positioned(
               bottom: 30,
@@ -993,6 +1330,8 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                 ),
               ),
             ),
+          
+          // ✅ Journey progress card (only during active journey)
           if (_isJourneyActive)
             Positioned(
               top: 180,
