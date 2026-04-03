@@ -91,6 +91,7 @@ flutter:
     - assets/tiles/heat/heat_z11.png
     - assets/tiles/heat/heat_z13.png
     - assets/tiles/heat/heat_z15.png
+    - assets/data/ncrb_mumbai_crimes.csv
 
   # To add assets to your application, add an assets section, like this:
   # assets:

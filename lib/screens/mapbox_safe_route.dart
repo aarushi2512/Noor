@@ -1,9 +1,13 @@
+// ignore_for_file: avoid_print
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:noor_new/services/offline_risk_service.dart';
 import 'package:geolocator/geolocator.dart'
     as geo
     show Geolocator, Position, LocationAccuracy, LocationSettings;
@@ -19,13 +23,13 @@ class MapboxSafeRoute extends StatefulWidget {
 }
 
 class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
+  final OfflineRiskService _riskService = OfflineRiskService();
   MapboxMap? mapboxMap;
   String? accessToken;
 
   Point? origin;
   Point? destination;
   bool isLoading = false;
-
   String? _routeDistance;
   String? _routeDuration;
 
@@ -52,9 +56,17 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   String? _currentETA;
   List<geo.Position> _journeyHistory = [];
 
+  // ✅ NEW: Risk heatmap variables
+  bool _showRiskHeatmap = false;
+  List<Map<String, dynamic>> _heatmapData = [];
+
   @override
   void initState() {
     super.initState();
+
+    // ✅ Initialize offline risk service (loads JSON from assets)
+    _riskService.initialize();
+
     accessToken = dotenv.env['MAPBOX_ACCESS_TOKEN'];
     if (accessToken != null) {
       MapboxOptions.setAccessToken(accessToken!);
@@ -124,9 +136,11 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   void _onMapCreated(MapboxMap map) {
     mapboxMap = map;
     _moveCamera();
+
+    // ✅ Just add 3D buildings - NO camera listener
+    _add3DBuildings();
   }
 
-  // ✅ v11 FIX: Style methods are now async and properties use new naming conventions
   Future<void> _add3DBuildings() async {
     if (mapboxMap == null) return;
     final style = mapboxMap!.style;
@@ -139,15 +153,14 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           id: '3d-buildings',
           sourceId: 'composite',
           sourceLayer: 'building',
-          minZoom: 15.0, // Renamed from minzoom
-          fillExtrusionHeight: null, // Apply data-driven property below
+          minZoom: 15.0,
+          fillExtrusionHeight: null,
           fillExtrusionBase: null,
           fillExtrusionColor: Colors.grey.toARGB32(),
           fillExtrusionOpacity: 0.5,
         ),
       );
 
-      // ✅ Use setStyleLayerProperty for dynamic Expressions in v11
       await style.setStyleLayerProperty(
         '3d-buildings',
         'fill-extrusion-height',
@@ -437,6 +450,263 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     }
   }
 
+  // ✅ NEW: Toggle risk heatmap
+  Future<void> _toggleHeatmap() async {
+    setState(() {
+      _showRiskHeatmap = !_showRiskHeatmap;
+    });
+
+    if (_showRiskHeatmap) {
+      // Show helpful hint to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🔍 Tip: Zoom in for detailed risk view'),
+            backgroundColor: Colors.teal,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // Load heatmap data
+      if (_heatmapData.isEmpty && origin != null) {
+        await _loadHeatmapData();
+      } else {
+        await _addHeatmapLayer();
+      }
+    } else {
+      // Hide heatmap when toggled off
+      if (mapboxMap != null) {
+        final style = mapboxMap!.style;
+        if (await style.styleLayerExists('risk-heatmap')) {
+          await style.removeStyleLayer('risk-heatmap');
+        }
+        if (await style.styleSourceExists('risk-source')) {
+          await style.removeStyleSource('risk-source');
+        }
+      }
+    }
+  }
+
+  // ✅ NEW: Load heatmap data from backend
+  Future<void> _loadHeatmapData() async {
+    print('[DEBUG] Starting OFFLINE _loadHeatmapData()');
+
+    if (mapboxMap == null) {
+      print('❌ [DEBUG] mapboxMap is null');
+      return;
+    }
+
+    try {
+      // ✅ FIXED BOUNDING BOX: Covers ALL of Greater Mumbai
+      const double minLat = 18.85; // Colaba (South Mumbai)
+      const double maxLat = 19.55; // Vasai-Virar (North)
+      const double minLng = 72.70; // Arabian Sea (West)
+      const double maxLng = 73.10; // Thane Creek (East)
+
+      print('🔥 [DEBUG] Generating offline heatmap for ENTIRE Mumbai...');
+
+      final data = _riskService.generateHeatmapData(
+        minLat: minLat,
+        maxLat: maxLat,
+        minLng: minLng,
+        maxLng: maxLng,
+        resolution: 60,
+      );
+
+      print('🔥 [DEBUG] Generated ${data.length} points offline');
+
+      if (data.isNotEmpty && mounted) {
+        setState(() {
+          _heatmapData = data;
+        });
+        await _addHeatmapLayer();
+        print('✅ [DEBUG] Heatmap layer added successfully');
+      }
+    } catch (e, stack) {
+      print('❌ [DEBUG] Error: $e');
+      print('❌ [DEBUG] Stack: $stack');
+    }
+  }
+
+  // ✅ NEW: Center camera on Mumbai when heatmap loads
+  void _centerOnMumbai() {
+    if (mapboxMap != null) {
+      mapboxMap!.flyTo(
+        CameraOptions(
+          center: Point(
+            coordinates: Position(72.85, 19.15),
+          ), // Center of Mumbai
+          zoom: 10.0, // ✅ Zoomed out to show all Mumbai
+          pitch: 0.0,
+        ),
+        MapAnimationOptions(duration: 1000),
+      );
+    }
+  }
+
+ Future<void> _addHeatmapLayer() async {
+    print('🔥 [DEBUG] _addHeatmapLayer() with ${_heatmapData.length} points');
+
+    if (mapboxMap == null || _heatmapData.isEmpty) {
+      print('❌ [DEBUG] mapboxMap null or no data');
+      return;
+    }
+
+    final style = mapboxMap!.style;
+
+    try {
+      // Clean up existing layers
+      if (await style.styleLayerExists('risk-heatmap')) {
+        await style.removeStyleLayer('risk-heatmap');
+      }
+      if (await style.styleSourceExists('risk-source')) {
+        await style.removeStyleSource('risk-source');
+      }
+
+      // Build GeoJSON features
+      final features = _heatmapData.map((point) {
+        return {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [point['lng'], point['lat']],
+          },
+          'properties': {
+            'risk': point['risk_score'] ?? 0.5,
+            'level': point['risk_level'] ?? 'moderate',
+          },
+        };
+      }).toList();
+
+      final geojson = {'type': 'FeatureCollection', 'features': features};
+
+      // Add source
+      await style.addSource(
+        GeoJsonSource(id: 'risk-source', data:jsonEncode(geojson)),
+      );
+      print('✅ Source added');
+
+      // ✅ BASE LAYER: Balanced starting point
+      await style.addLayer(
+        HeatmapLayer(
+          id: 'risk-heatmap',
+          sourceId: 'risk-source',
+          heatmapRadius: 50.0,
+          heatmapIntensity: 0.8,
+        ),
+      );
+      print('✅ Base layer added');
+
+      // ✅ TUNED FOR ZOOM 11-12 (15km = 1/4 screen):
+      // Radius: Large enough to blend, small enough to not cover India
+      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-radius', [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        9, 25, // ✅ Visible but not overwhelming (India view)
+        10, 35, // ✅ Light coverage (West India)
+        11, 50, // ✅ ✅ PERFECT for 15km = 1/4 screen!
+        12, 65, // ✅ ✅ Great for city view
+        13, 75, // ✅ Balanced
+        14, 85, // ✅ Good for area view
+        15, 95, // ✅ Detailed neighborhood
+        16, 105, // ✅ Clear street-level detail
+        17, 115, // ✅ Red spots concentrated
+        18, 125, // ✅ Maximum detail
+      ]);
+      print('✅ Dynamic radius applied (tuned for zoom 11-12)');
+
+      // ✅ TUNED INTENSITY: Colors visible at zoom 11-12
+      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-intensity', [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        9, 0.25, // ✅ Light but visible (India view)
+        10, 0.35, // ✅ Visible gradient (West India)
+        11, 0.55, // ✅ ✅ PERFECT for 15km = 1/4 screen!
+        12, 0.75, // ✅ ✅ Great contrast for city view
+        13, 0.90, // ✅ Balanced
+        14, 1.05, // ✅ Strong colors
+        15, 1.20, // ✅ Clear neighborhood detail
+        16, 1.35, // ✅ Vibrant street-level
+        17, 1.50, // ✅ Red spots pop
+        18, 1.65, // ✅ Maximum visibility
+      ]);
+      print('✅ Dynamic intensity applied (tuned for zoom 11-12)');
+
+      // Set weight (risk-based coloring)
+      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-weight', [
+        'get',
+        'risk',
+      ]);
+
+      // ✅ VIBRANT color gradient (visible at all zooms)
+      await style.setStyleLayerProperty('risk-heatmap', 'heatmap-color', [
+        'interpolate',
+        ['linear'],
+        ['heatmap-density'],
+        0, 'rgba(34, 197, 94, 0.4)', // ✅ Green visible
+        0.25, 'rgba(234, 179, 8, 0.7)', // ✅ Yellow clear
+        0.5, 'rgba(249, 115, 22, 0.85)', // ✅ Orange strong
+        0.75, 'rgba(239, 68, 68, 0.92)', // ✅ Red very visible
+        1, 'rgba(127, 29, 29, 0.97)', // ✅ Dark red clear
+      ]);
+      print('✅ Color gradient applied (vibrant)');
+
+      print('✅ Heatmap configured - visible at 15km = 1/4 screen!');
+    } catch (e, stack) {
+      print('❌ Error: $e');
+      print('❌ Stack: $stack');
+    }
+  }
+
+  // ✅ NEW: Hide heatmap layer (called when zoomed out too far)
+  Future<void> _hideHeatmapLayer() async {
+    if (mapboxMap == null) return;
+
+    final style = mapboxMap!.style;
+
+    if (await style.styleLayerExists('risk-heatmap')) {
+      await style.removeStyleLayer('risk-heatmap');
+      print('✅ Heatmap layer hidden');
+    }
+    if (await style.styleSourceExists('risk-source')) {
+      await style.removeStyleSource('risk-source');
+      print('✅ Heatmap source hidden');
+    }
+
+    // _isHeatmapHiddenDueToZoom = true;
+  }
+
+  // ✅ NEW: Check if user entered high-risk zone
+  Future<void> _checkRiskZone(geo.Position position) async {
+    if (!_showRiskHeatmap) return;
+
+    // ✅ Get risk LOCALLY (no API call!)
+    final riskData = _riskService.getRiskForLocation(
+      position.latitude,
+      position.longitude,
+    );
+
+    if (riskData['risk_level'] == 'critical' ||
+        riskData['risk_level'] == 'high') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.warning, color: Colors.white),
+              const SizedBox(width: 8),
+              Text('⚠️ High risk: ${riskData['area_name'] ?? 'This area'}'),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
   void _startJourney() {
     if (!mounted || origin == null || destination == null) return;
     setState(() {
@@ -461,6 +731,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     _startPeriodicSharing();
   }
 
+  // ✅ UPDATED: Added _checkRiskZone call
   void _startLocationTracking() {
     final settings = geo.LocationSettings(
       accuracy: geo.LocationAccuracy.high,
@@ -476,6 +747,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             _updateJourneyProgress(position);
           });
           _followUserLocation(position);
+          _checkRiskZone(position); // ✅ NEW: Check risk zone
         });
   }
 
@@ -550,7 +822,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     );
   }
 
-// ✅ FIXED: Use .lat and .lng for Mapbox Position objects
   double _calculateDistance(Position a, Position b) {
     const double earthRadius = 6371; // km
     final dLat = _toRadians((b.lat - a.lat).toDouble());
@@ -589,6 +860,15 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         ),
         backgroundColor: Colors.teal,
         actions: [
+          // ✅ NEW: Heatmap toggle button
+          IconButton(
+            icon: Icon(
+              _showRiskHeatmap ? Icons.thermostat : Icons.thermostat_outlined,
+              color: _showRiskHeatmap ? Colors.red : Colors.white,
+            ),
+            onPressed: _toggleHeatmap,
+            tooltip: 'Toggle Risk Heatmap',
+          ),
           IconButton(
             icon: const Icon(Icons.sos, color: Colors.red, size: 30),
             onPressed: _triggerSOS,
@@ -600,10 +880,29 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           MapWidget(
             styleUri: MapboxStyles.MAPBOX_STREETS,
             onMapCreated: _onMapCreated,
-            // ✅ v11 Replacement for addOnStyleLoadedListener
             onStyleLoadedListener: (StyleLoadedEventData data) =>
                 _add3DBuildings(),
           ),
+          // Add this inside the Stack children, after MapWidget:
+          if (_showRiskHeatmap)
+            Positioned(
+              bottom: 150,
+              right: 15,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  '🔴 Zoom in for details',
+                  style: TextStyle(color: Colors.white, fontSize: 11),
+                ),
+              ),
+            ),
           if (isLoading)
             const Center(child: CircularProgressIndicator(color: Colors.teal)),
           Positioned(
