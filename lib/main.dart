@@ -32,10 +32,9 @@ Future<void> backgroundCallback(int id) async {
     iOS: iosSettings,
   );
 
-  // FIX 1 ✅
+  // ✅ FIX: Use 'settings' named parameter
   await notifications.initialize(settings: initSettings);
 
-  // FIX 2 ✅
   await notifications.show(
     id: 0,
     title: '📞 $name is calling...',
@@ -56,10 +55,43 @@ Future<void> backgroundCallback(int id) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  final FlutterLocalNotificationsPlugin notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  const DarwinInitializationSettings initializationSettingsIOS =
+      DarwinInitializationSettings();
+
+  const InitializationSettings initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+    iOS: initializationSettingsIOS,
+  );
+
+  // ✅ FIX 1: Use 'settings' named parameter here too
+  await notificationsPlugin.initialize(settings: initializationSettings);
+
+  // ✅ FIX 2: Create Channel properly for Android
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'danger_zone_channel',
+    'Danger Zone Alerts',
+    description: 'Critical safety warnings',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+    showBadge: true,
+  );
+
+  // Check if running on Android before creating channel
+  await notificationsPlugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
+      ?.createNotificationChannel(channel);
+
   await dotenv.load(fileName: ".env");
-
   await AndroidAlarmManager.initialize();
-
   await FakeCallService().initialize();
 
   runApp(

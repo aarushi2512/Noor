@@ -3,7 +3,22 @@
 import 'dart:math' as math;
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart'; // foundation.dart is included here
+
+/// Helper class moved to top-level to fix 'class_in_class' error
+class _RiskPoint {
+  final double lat;
+  final double lng;
+  final double risk;
+  final String? areaName;
+
+  _RiskPoint({
+    required this.lat,
+    required this.lng,
+    required this.risk,
+    this.areaName,
+  });
+}
 
 class OfflineRiskService {
   static final OfflineRiskService _instance = OfflineRiskService._internal();
@@ -13,6 +28,9 @@ class OfflineRiskService {
   List<Map<String, dynamic>> _riskGrid = [];
   bool _isLoaded = false;
 
+  // ✅ Now works because _RiskPoint is a top-level type
+  List<_RiskPoint> _riskPoints = [];
+
   Future<void> initialize() async {
     if (_isLoaded) return;
 
@@ -21,13 +39,62 @@ class OfflineRiskService {
         'assets/data/mumbai_risk_grid.json',
       );
       final List<dynamic> jsonList = json.decode(jsonString);
+
       _riskGrid = List<Map<String, dynamic>>.from(jsonList);
+
+      // ✅ Map to the helper class
+      _riskPoints = _riskGrid.map((region) {
+        return _RiskPoint(
+          lat: (region['Latitude'] ?? 0).toDouble(),
+          lng: (region['Longitude'] ?? 0).toDouble(),
+          risk: (region['risk'] ?? 0.5).toDouble(),
+          areaName: region['area_name'],
+        );
+      }).toList();
+
       _isLoaded = true;
       debugPrint('✅ Loaded ${_riskGrid.length} risk regions offline');
     } catch (e) {
       debugPrint('❌ Failed to load risk data: $e');
       _riskGrid = [];
+      _riskPoints = [];
     }
+  }
+
+  Map<String, dynamic> checkDangerZone(double lat, double lng) {
+    if (!_isLoaded || _riskPoints.isEmpty) {
+      return {'isDanger': false};
+    }
+
+    const double dangerRadiusKm = 0.15;
+    const double highRiskThreshold = 0.7;
+
+    for (var point in _riskPoints) {
+      double dLat = (point.lat - lat) * 111.0;
+      double dLng = (point.lng - lng) * 111.0 * math.cos(lat * math.pi / 180);
+      double distSq = dLat * dLat + dLng * dLng;
+
+      if (distSq > (dangerRadiusKm * dangerRadiusKm)) continue;
+
+      double distance = _haversineDistance(lat, lng, point.lat, point.lng);
+
+      if (distance <= dangerRadiusKm && point.risk >= highRiskThreshold) {
+        bool isCritical = point.risk > 0.85;
+        return {
+          'isDanger': true,
+          'level': isCritical ? 'CRITICAL' : 'HIGH',
+          'areaName': point.areaName ?? _getAreaNameFromCoordinates(lat, lng),
+          'message': isCritical
+              ? '⚠️ CRITICAL DANGER ZONE DETECTED! Immediate caution advised.'
+              : '⚠️ High Risk Area detected. Stay alert.',
+          'tip': 'Move to a well-lit, populated area immediately.',
+          'color': isCritical ? Colors.red : Colors.orange,
+          'riskScore': point.risk,
+        };
+      }
+    }
+
+    return {'isDanger': false};
   }
 
   Map<String, dynamic> getRiskForLocation(double latitude, double longitude) {
@@ -48,11 +115,13 @@ class OfflineRiskService {
       final double lat = (region['Latitude'] ?? 0).toDouble();
       final double lng = (region['Longitude'] ?? 0).toDouble();
 
-      // Quick squared distance check before expensive Haversine
       final double dLat = lat - latitude;
       final double dLng = lng - longitude;
-      if ((dLat * dLat + dLng * dLng) > 0.01)
-        continue; // Skip points > ~10km away
+
+      // ✅ Added curly braces to satisfy lint rules
+      if ((dLat * dLat + dLng * dLng) > 0.01) {
+        continue;
+      }
 
       final double distance = _haversineDistance(latitude, longitude, lat, lng);
 
@@ -73,7 +142,6 @@ class OfflineRiskService {
       };
     }
 
-    // ✅ IMPROVED: Better fallback estimation for ALL Mumbai areas
     final double estimatedRisk = _estimateRiskFromCoordinates(
       latitude,
       longitude,
@@ -86,6 +154,8 @@ class OfflineRiskService {
       'area_name': _getAreaNameFromCoordinates(latitude, longitude),
     };
   }
+
+  // ... (generateHeatmapData and other private methods remain the same)
 
   List<Map<String, dynamic>> generateHeatmapData({
     required double minLat,
@@ -105,7 +175,6 @@ class OfflineRiskService {
         final double lat = minLat + (i * latStep);
         final double lng = minLng + (j * lngStep);
 
-        // ✅ EXPANDED: More permissive boundary check
         if (!_isInMumbaiBoundary(lat, lng)) {
           results.add({
             'lat': lat,
@@ -135,7 +204,6 @@ class OfflineRiskService {
           }
         }
 
-        // ✅ IMPROVED: Better fallback for areas without data
         if (riskScore == 0.5 && minDistance == double.infinity) {
           riskScore = _estimateRiskFromCoordinates(lat, lng);
         }
@@ -148,7 +216,6 @@ class OfflineRiskService {
         });
       }
     }
-    debugPrint('🔥 Generated ${results.length} heatmap points offline');
     return results;
   }
 
@@ -159,49 +226,35 @@ class OfflineRiskService {
     return 'low';
   }
 
-  // ✅ IMPROVED: Better risk estimation for ALL Mumbai areas including South Mumbai
   double _estimateRiskFromCoordinates(double lat, double lng) {
-    // South Mumbai (Colaba, Fort, Kalbadevi, Cotton Green, Marine Lines, etc.)
     if (lat < 19.00) {
-      if (lng < 72.83) return 0.68; // Colaba, Nariman Point
-      if (lng < 72.85)
-        return 0.72; // Fort, Kalbadevi, Cotton Green, Marine Lines
-      if (lng < 72.87) return 0.65; // Dadar, Worli fringe
-      return 0.60; // Southern suburbs fringe
+      if (lng < 72.83) return 0.68;
+      if (lng < 72.85) return 0.72;
+      if (lng < 72.87) return 0.65;
+      return 0.60;
     }
-
-    // Central Mumbai (Dadar, Parel, Lower Parel, Prabhadevi)
     if (lat < 19.05) {
-      if (lng < 72.84) return 0.62; // Worli, Lower Parel
-      if (lng < 72.86) return 0.64; // Parel, Prabhadevi
-      return 0.58; // Central fringe
+      if (lng < 72.84) return 0.62;
+      if (lng < 72.86) return 0.64;
+      return 0.58;
     }
-
-    // Western Suburbs (Bandra to Borivali)
     if (lat < 19.20) {
-      if (lat < 19.10) return 0.55; // Bandra, Khar, Santacruz
-      if (lat < 19.15) return 0.52; // Andheri, Jogeshwari
-      return 0.48; // Goregaon, Malad, Kandivali
+      if (lat < 19.10) return 0.55;
+      if (lat < 19.15) return 0.52;
+      return 0.48;
     }
-
-    // Far Suburbs (Borivali, Dahisar, Mira Road)
     if (lat < 19.30) {
-      if (lng < 72.86) return 0.45; // Borivali West
-      if (lng < 72.90) return 0.50; // Dahisar, Mira Road
-      return 0.42; // Eastern suburbs fringe
+      if (lng < 72.86) return 0.45;
+      if (lng < 72.90) return 0.50;
+      return 0.42;
     }
-
-    // Thane & Beyond
     if (lat < 19.45) {
-      if (lng > 72.95) return 0.58; // Thane West/East
-      return 0.46; // Mira-Bhayandar fringe
+      if (lng > 72.95) return 0.58;
+      return 0.46;
     }
-
-    // Default fallback
     return 0.45;
   }
 
-  // ✅ NEW: Get approximate area name from coordinates (for alerts)
   String _getAreaNameFromCoordinates(double lat, double lng) {
     if (lat < 18.92) {
       if (lng < 72.82) return 'Colaba';
@@ -227,29 +280,14 @@ class OfflineRiskService {
     return 'Mumbai Suburbs';
   }
 
-  // ✅ EXPANDED: More permissive boundary to include ALL of Greater Mumbai
- // ✅ EXPANDED: Includes ALL of South Mumbai + Harbor areas
   bool _isInMumbaiBoundary(double lat, double lng) {
-    // South: Include ALL of South Mumbai + Colaba + Navy Nagar
-    if (lat < 18.88 && lng < 72.75) return false; // Open sea SW
-    if (lat < 18.90 && lng > 72.95) return false; // Open sea SE
-
-    // West: Arabian Sea boundary (permissive)
+    if (lat < 18.88 && lng < 72.75) return false;
+    if (lat < 18.90 && lng > 72.95) return false;
     if (lng < 72.68) return false;
-
-    // East: Include Thane creek fringe + Airoli/Ghansoli
     if (lng > 73.12) return false;
-
-    // North: Include Vasai-Virar
     if (lat > 19.55) return false;
-
-    // North-East: Include Thane city + Kalyan fringe
     if (lat > 19.30 && lng > 73.05) return false;
-
-    // South-East: Include all harbor areas (Sewri, Wadala, Mazgaon)
     if (lat < 19.00 && lng > 73.00) return false;
-
-    // ✅ Inside Greater Mumbai boundary (ALL areas included)
     return true;
   }
 
@@ -273,7 +311,6 @@ class OfflineRiskService {
             math.sin(dLng / 2);
 
     final double c = 2 * math.asin(math.sqrt(a));
-
     return earthRadius * c;
   }
 
