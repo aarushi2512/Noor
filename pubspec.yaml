@@ -64,6 +64,7 @@ dependencies:
   mapbox_search: ^4.4.0
   glassmorphism: ^3.0.0
   animated_bottom_navigation_bar: ^1.4.0
+  geocoding: ^4.0.0
 
 dev_dependencies:
   flutter_test:
