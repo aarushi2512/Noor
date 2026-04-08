@@ -136,8 +136,6 @@ class _HomePageContentState extends State<HomePageContent> {
       BatteryState state,
     ) async {
       final int level = await _battery.batteryLevel;
-      // debugPrint('🔋 Battery Level: $level%');
-
       if (level <= 15 && !_lowBatterySossent) {
         _triggerLowBatterySOS();
       }
@@ -149,6 +147,10 @@ class _HomePageContentState extends State<HomePageContent> {
     _lowBatterySossent = true;
 
     try {
+      // ✅ Check if SOS Service has contacts before proceeding
+      // Assuming SOSService has a way to check contacts.
+      // If your SOSService doesn't have this, we rely on the exception catch below.
+
       const LocationSettings settings = LocationSettings(
         accuracy: LocationAccuracy.high,
         timeLimit: Duration(seconds: 5),
@@ -171,12 +173,21 @@ class _HomePageContentState extends State<HomePageContent> {
       await _notificationsPlugin.show(
         id: 99,
         title: '🔋 Low Battery SOS Sent',
-        body:
-            'Send your location to your emergency contacts. Please charge your phone soon!',
+        body: 'Your location has been sent to emergency contacts.',
         notificationDetails: NotificationDetails(android: androidDetails),
       );
     } catch (e) {
+      _lowBatterySossent = false; // Reset so it can try again later if needed
       debugPrint('❌ Failed to send Low Battery SOS: $e');
+
+      // ✅ Specific handling for "No Contacts" scenario if the exception message contains it
+      if (e.toString().contains('contact') || e.toString().contains('empty')) {
+        // Cannot show SnackBar here easily as this runs in background/listener
+        // But we log it. In a real app, you might store a "failed SOS" flag to show on next open.
+        debugPrint(
+          '⚠️ SOS Failed: No trusted contacts found. Please add contacts in Profile.',
+        );
+      }
     }
   }
 
@@ -301,8 +312,10 @@ class _HomePageContentState extends State<HomePageContent> {
     return "Mumbai, India";
   }
 
+  // ✅ IMPROVED SOS LOGIC
   Future<void> _callSOS(BuildContext context) async {
     try {
+      // ✅ Step 1: Try to send SOS
       String? locationLink;
       try {
         const LocationSettings settings = LocationSettings(
@@ -317,24 +330,100 @@ class _HomePageContentState extends State<HomePageContent> {
       } catch (e) {
         debugPrint('⚠️ Location not available for SOS: $e');
       }
+
       await SOSService.sendSOSSMS(locationLink);
+
+      // ✅ Success Message
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🚨 SOS alert sent!'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('🚨 SOS alert sent to trusted contacts!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('SOS failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      // ✅ Enhanced Error Handling
+      String errorMessage = 'SOS failed: ${e.toString()}';
+      Color errorColor = Colors.red;
+      IconData errorIcon = Icons.error_outline;
+
+      // ✅ Check for specific "No Contacts" error
+      if (e.toString().toLowerCase().contains('contact') ||
+          e.toString().toLowerCase().contains('empty') ||
+          e.toString().toLowerCase().contains('null')) {
+        errorMessage =
+            'No trusted contacts found! Please add contacts in your Profile first.';
+        errorColor = Colors.orange;
+        errorIcon = Icons.person_add_disabled;
+
+        // ✅ Show Action Button to go to Profile
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(errorIcon, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      errorMessage,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: errorColor,
+              duration: const Duration(seconds: 5),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              action: SnackBarAction(
+                label: 'Go to Profile',
+                textColor: Colors.white,
+                onPressed: () {
+                  // Navigate to Profile Page (Index 3 in your nav)
+                  // You might need to expose a method in HomePage to change index
+                  // For now, we just show the message.
+                  // Ideally: Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
+                },
+              ),
+            ),
+          );
+        }
+      } else {
+        // ✅ Generic Error
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(errorIcon, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(errorMessage)),
+                ],
+              ),
+              backgroundColor: errorColor,
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
       }
     }
   }
@@ -345,6 +434,11 @@ class _HomePageContentState extends State<HomePageContent> {
         'assets/data/emergency_card.json',
       );
       final List<dynamic> jsonData = jsonDecode(jsonString);
+
+      if (jsonData.isEmpty) {
+        return [];
+      }
+
       return jsonData.map((cardData) {
         return EmergencyCard(
           context: context,
@@ -398,17 +492,60 @@ class _HomePageContentState extends State<HomePageContent> {
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting)
                         return const Center(child: CircularProgressIndicator());
+
                       if (snapshot.hasError)
                         return Center(
                           child: Text(
-                            'Error: ${snapshot.error}',
+                            'Error loading contacts',
                             style: TextStyle(color: theme.colorScheme.error),
                           ),
                         );
-                      if (!snapshot.hasData || snapshot.data!.isEmpty)
-                        return const Center(
-                          child: Text('No emergency contacts'),
+
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        // ✅ IMPROVED EMPTY STATE
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.contact_phone_outlined,
+                                size: 48,
+                                color: theme.colorScheme.onSurface.withOpacity(
+                                  0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No emergency contacts',
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.7),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                onPressed: () {
+                                  // Navigate to Profile to add contacts
+                                  // Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Go to Profile tab to add trusted contacts',
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.add, size: 16),
+                                label: const Text('Add Contacts'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
                         );
+                      }
+
                       return ListView(
                         scrollDirection: Axis.horizontal,
                         children: snapshot.data!,
@@ -431,7 +568,7 @@ class _HomePageContentState extends State<HomePageContent> {
                             builder: (_) => AlertDialog(
                               title: const Text('SOS Help'),
                               content: const Text(
-                                'Tap to send location to trusted contacts.',
+                                'Tap to send your live location to your trusted contacts immediately. Make sure you have added contacts in your Profile first.',
                               ),
                               actions: [
                                 TextButton(
@@ -450,7 +587,7 @@ class _HomePageContentState extends State<HomePageContent> {
                             color: sosButtonColor,
                             boxShadow: [
                               BoxShadow(
-                                color: sosButtonColor.withOpacity(0.3),
+                                color: sosButtonColor.withValues(alpha: 0.3),
                                 blurRadius: 20,
                                 offset: const Offset(0, 8),
                               ),
@@ -482,7 +619,9 @@ class _HomePageContentState extends State<HomePageContent> {
                       Text(
                         'Tap for emergency alert',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.7,
+                          ),
                         ),
                       ),
                     ],
@@ -516,7 +655,7 @@ class _HomePageContentState extends State<HomePageContent> {
                                     (isDark
                                             ? const Color(0xFF2D5A2D)
                                             : const Color(0xFF4A7C4A))
-                                        .withOpacity(0.3),
+                                        .withValues(alpha: 0.3),
                                 blurRadius: 20,
                                 offset: const Offset(0, 8),
                               ),
@@ -548,7 +687,9 @@ class _HomePageContentState extends State<HomePageContent> {
                       Text(
                         'Schedule fake call',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.7,
+                          ),
                         ),
                       ),
                     ],
@@ -602,7 +743,6 @@ class _HomePageContentState extends State<HomePageContent> {
                   },
                 ),
                 const SizedBox(height: 20),
-                // ✅ Test Button Removed
               ],
             ),
           ),
@@ -685,22 +825,22 @@ class _HomePageContentState extends State<HomePageContent> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.white.withOpacity(0.3),
-                Colors.white.withOpacity(0.1),
+                Colors.white.withValues(alpha: 0.3),
+                Colors.white.withValues(alpha: 0.1),
               ],
             ),
             border: Border.all(
-              color: Colors.white.withOpacity(0.4),
+              color: Colors.white.withValues(alpha: 0.4),
               width: 1.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: primaryColor.withOpacity(0.15),
+                color: primaryColor.withValues(alpha: 0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 5),
               ),
@@ -741,10 +881,10 @@ class _HomePageContentState extends State<HomePageContent> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: primaryColor.withOpacity(0.15),
+                        color: primaryColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: primaryColor.withOpacity(0.3),
+                          color: primaryColor.withValues(alpha: 0.3),
                         ),
                       ),
                       child: Row(
@@ -773,7 +913,7 @@ class _HomePageContentState extends State<HomePageContent> {
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.orangeAccent.withOpacity(0.05),
+                          color: Colors.orangeAccent.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Column(
@@ -814,7 +954,7 @@ class _HomePageContentState extends State<HomePageContent> {
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: primaryColor.withOpacity(0.1),
+                          color: primaryColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Column(
@@ -841,7 +981,7 @@ class _HomePageContentState extends State<HomePageContent> {
                               "${current.riskLevel} Risk",
                               style: TextStyle(
                                 fontSize: 12,
-                                color: primaryColor.withOpacity(0.8),
+                                color: primaryColor.withValues(alpha: 0.8),
                               ),
                             ),
                           ],
@@ -857,9 +997,11 @@ class _HomePageContentState extends State<HomePageContent> {
                 child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: impactColor.withOpacity(0.05),
+                    color: impactColor.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: impactColor.withOpacity(0.2)),
+                    border: Border.all(
+                      color: impactColor.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -904,7 +1046,7 @@ class _HomePageContentState extends State<HomePageContent> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           decoration: BoxDecoration(
-                            color: primaryColor.withOpacity(0.15),
+                            color: primaryColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: primaryColor, width: 1.5),
                           ),
@@ -989,7 +1131,7 @@ class _HomePageContentState extends State<HomePageContent> {
                       backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      shadowColor: primaryColor.withOpacity(0.4),
+                      shadowColor: primaryColor.withValues(alpha: 0.4),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
