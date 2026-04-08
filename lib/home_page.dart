@@ -1001,7 +1001,7 @@ class _HomePageContentState extends State<HomePageContent> {
                         const SizedBox(width: 10),
                         Text(
                           next != null
-                              ? "Plan Safe Route (Now & ${DateFormat('h a').format(next.dateTime)})"
+                              ? "Plan Safe Route"
                               : "Plan Safe Route Now",
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,

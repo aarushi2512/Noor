@@ -13,14 +13,12 @@ class ThemeProvider with ChangeNotifier {
 
   Future<void> _init() async {
     _prefs = await SharedPreferences.getInstance();
-
-    // Check saved preference first
     final savedTheme = _prefs.getBool('is_dark_mode');
     if (savedTheme != null) {
       _isDarkMode = savedTheme;
     } else {
-      // Default to system preference
-      final brightness = WidgetsBinding.instance.window.platformBrightness;
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
       _isDarkMode = brightness == Brightness.dark;
     }
     notifyListeners();

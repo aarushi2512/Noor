@@ -3,16 +3,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui'; // For BackdropFilter
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:noor_new/services/offline_risk_service.dart';
 import 'package:noor_new/services/route_risk_service.dart';
 import 'package:noor_new/services/sos_service.dart';
-import 'package:geolocator/geolocator.dart'
-    as geo
-    show Geolocator, Position, LocationAccuracy, LocationSettings;
+import 'package:noor_new/theme/app_colors.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 
@@ -36,7 +37,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   String? _routeDistance;
   String? _routeDuration;
 
-  // Route risk scoring variables
   List<Map<String, dynamic>> _routeOptions = [];
   int _selectedRouteIndex = 0;
 
@@ -56,23 +56,15 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   final String _destMarkerId = 'dest-marker';
 
   Timer? _searchTimer;
-
   StreamSubscription<geo.Position>? _locationSubscription;
   bool _isJourneyActive = false;
   double _journeyProgress = 0.0;
   String? _currentETA;
   List<geo.Position> _journeyHistory = [];
 
-  // Risk heatmap variables
   bool _showRiskHeatmap = false;
   List<Map<String, dynamic>> _heatmapData = [];
-
-  // 🎨 UI Colors
-  static const Color _bgColor = Color(0xFFBCEAD6); // Soft Mint
-  static const Color _cardColor = Colors.white;
-  static const Color _primaryColor = Color(0xFFFF6B6B); // Coral
-  static const Color _textDark = Color(0xFF2D3436);
-  static const Color _textLight = Color(0xFF95A5A6);
+  bool _isDarkMode = false;
 
   @override
   void initState() {
@@ -136,8 +128,8 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       debugPrint("Location error: $e");
       if (!mounted) return;
       setState(() {
-        origin = Point(coordinates: Position(72.8561, 19.2435));
-        _sourceController.text = 'SFIT, Borivali';
+        origin = Point(coordinates: Position(72.8777, 19.0760));
+        _sourceController.text = 'Mumbai, India';
       });
       _moveCamera();
       _addOriginMarker();
@@ -148,6 +140,15 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     mapboxMap = map;
     _moveCamera();
     _add3DBuildings();
+  }
+
+  void _moveCamera() {
+    if (mapboxMap == null) return;
+    final target = origin ?? Point(coordinates: Position(72.8777, 19.0760));
+    mapboxMap!.flyTo(
+      CameraOptions(center: target, zoom: 15.0, pitch: 0.0),
+      MapAnimationOptions(duration: 1000),
+    );
   }
 
   Future<void> _add3DBuildings() async {
@@ -178,15 +179,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       ]);
     } catch (e) {
       debugPrint('❌ Failed to add 3D buildings: $e');
-    }
-  }
-
-  void _moveCamera() {
-    if (mapboxMap != null && origin != null) {
-      mapboxMap!.flyTo(
-        CameraOptions(center: origin, zoom: 16.0, pitch: 45.0),
-        MapAnimationOptions(duration: 1000),
-      );
     }
   }
 
@@ -263,9 +255,8 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
 
     _isSelectingSuggestion = false;
     _moveCamera();
-    if (origin != null && destination != null) {
+    if (origin != null && destination != null)
       _drawRoute(origin!, destination!);
-    }
   }
 
   Future<void> _addOriginMarker() async {
@@ -293,7 +284,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         id: _originMarkerId,
         sourceId: _originMarkerId,
         circleRadius: 10.0,
-        circleColor: Colors.blue.toARGB32(),
+        circleColor: AppColors.primaryBurgundyLight.toARGB32(),
         circleStrokeWidth: 3.0,
         circleStrokeColor: Colors.white.toARGB32(),
       ),
@@ -328,7 +319,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         id: _destMarkerId,
         sourceId: _destMarkerId,
         circleRadius: 10.0,
-        circleColor: Colors.red.toARGB32(),
+        circleColor: AppColors.riskRed.toARGB32(),
         circleStrokeWidth: 3.0,
         circleStrokeColor: Colors.white.toARGB32(),
       ),
@@ -338,30 +329,22 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   Future<void> _drawRoute(Point start, Point end) async {
     if (mapboxMap == null || accessToken == null) return;
     setState(() => isLoading = true);
-
     try {
       final directDistance = _calculateDistance(
         Position(start.coordinates.lng, start.coordinates.lat),
         Position(end.coordinates.lng, end.coordinates.lat),
       );
-
       final url = Uri.parse(
-        'https://api.mapbox.com/directions/v5/mapbox/$_profile/'
-        '${start.coordinates.lng},${start.coordinates.lat};'
-        '${end.coordinates.lng},${end.coordinates.lat}?'
-        'geometries=geojson&overview=full&access_token=$accessToken'
-        '&alternatives=true&annotations=duration,distance',
+        'https://api.mapbox.com/directions/v5/mapbox/$_profile/${start.coordinates.lng},${start.coordinates.lat};${end.coordinates.lng},${end.coordinates.lat}?'
+        'geometries=geojson&overview=full&access_token=$accessToken&alternatives=true&annotations=duration,distance',
       );
-
       final res = await http.get(url);
       if (res.statusCode != 200) return;
-
       final data = jsonDecode(res.body);
       if (data['routes'] == null || data['routes'].isEmpty) return;
 
       final List routes = data['routes'];
       final List<Map<String, dynamic>> routeOptions = [];
-
       for (int i = 0; i < routes.length; i++) {
         final route = routes[i];
         final geometry = route['geometry'];
@@ -372,7 +355,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           routeCoordinates: coordinates,
           directDistanceKm: directDistance,
         );
-
         routeOptions.add({
           'route_index': i,
           'route': route,
@@ -398,23 +380,20 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         final option = routeOptions[i];
         final isFastest = option['duration'] == fastestDuration;
         final isSafest = option['risk_score'] == safestRisk;
-
         if (isFastest && isSafest) {
-          option['label'] = '🟢⚡ Best Overall';
-          option['label_color'] = Colors.teal;
+          option['label'] = '🟢 Best Overall';
+          option['label_color'] = AppColors.riskGreen;
         } else if (isSafest) {
           option['label'] = '🟢 Safest';
-          option['label_color'] =
-              Colors.green; // Keep logic green, but UI won't glow
+          option['label_color'] = AppColors.riskGreen;
         } else if (isFastest) {
           option['label'] = '⚡ Fastest';
-          option['label_color'] = Colors.orange;
+          option['label_color'] = AppColors.riskOrange;
         } else {
           option['label'] = '🟡 Balanced';
-          option['label_color'] = Colors.amber[700];
+          option['label_color'] = AppColors.riskYellow;
         }
       }
-
       routeOptions.sort((a, b) {
         final riskCompare = a['risk_score'].compareTo(b['risk_score']);
         if (riskCompare != 0) return riskCompare;
@@ -430,11 +409,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         _routeDuration =
             '${(routeOptions[0]['duration'] / 60).toStringAsFixed(0)} min';
       });
-
       await _drawSelectedRoute();
     } catch (e, stack) {
       debugPrint("❌ Route error: $e");
-      debugPrint("❌ Stack: $stack");
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -460,22 +437,20 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         _routeOptions.isEmpty ||
         _selectedRouteIndex >= _routeOptions.length)
       return;
-
     final selectedRoute = _routeOptions[_selectedRouteIndex];
     final geometry = selectedRoute['geometry'];
     if (geometry == null) return;
-
     final style = mapboxMap!.style;
     if (await style.styleLayerExists(_routeLayerId))
       await style.removeStyleLayer(_routeLayerId);
     if (await style.styleSourceExists(_routeSourceId))
       await style.removeStyleSource(_routeSourceId);
-
     await style.addSource(
       GeoJsonSource(id: _routeSourceId, data: jsonEncode(geometry)),
     );
-
-    final routeColor = (selectedRoute['label_color'] as Color?) ?? Colors.teal;
+    final routeColor =
+        (selectedRoute['label_color'] as Color?) ??
+        AppColors.primaryBurgundyLight;
     await style.addLayer(
       LineLayer(
         id: _routeLayerId,
@@ -493,7 +468,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     final style = mapboxMap!.style;
     if (await style.styleLayerExists(_routeLayerId))
       await style.removeStyleLayer(_routeLayerId);
-
     if (!mounted) return;
     setState(() {
       destination = null;
@@ -508,6 +482,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   }
 
   Future<void> _triggerSOS() async {
+    HapticFeedback.heavyImpact();
     try {
       String? locationLink;
       try {
@@ -552,7 +527,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   Future<void> _toggleHeatmap() async {
     setState(() => _showRiskHeatmap = !_showRiskHeatmap);
     if (_showRiskHeatmap) {
-      if (mounted) {
+      if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🔍 Tip: Zoom in for detailed risk view'),
@@ -560,7 +535,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             duration: Duration(seconds: 3),
           ),
         );
-      }
       if (_heatmapData.isEmpty && origin != null)
         await _loadHeatmapData();
       else
@@ -596,7 +570,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       }
     } catch (e, stack) {
       print('❌ Error: $e');
-      print('❌ Stack: $stack');
     }
   }
 
@@ -608,7 +581,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         await style.removeStyleLayer('risk-heatmap');
       if (await style.styleSourceExists('risk-source'))
         await style.removeStyleSource('risk-source');
-
       final features = _heatmapData
           .map(
             (point) => {
@@ -624,7 +596,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             },
           )
           .toList();
-
       await style.addSource(
         GeoJsonSource(
           id: 'risk-source',
@@ -639,7 +610,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           heatmapIntensity: 0.8,
         ),
       );
-
       await style.setStyleLayerProperty('risk-heatmap', 'heatmap-radius', [
         'interpolate',
         ['linear'],
@@ -699,19 +669,18 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         ['linear'],
         ['heatmap-density'],
         0,
-        'rgba(34, 197, 94, 0.4)',
+        'rgba(101, 163, 13, 0.4)',
         0.25,
-        'rgba(234, 179, 8, 0.7)',
+        'rgba(202, 138, 4, 0.7)',
         0.5,
-        'rgba(249, 115, 22, 0.85)',
+        'rgba(234, 88, 12, 0.85)',
         0.75,
-        'rgba(239, 68, 68, 0.92)',
+        'rgba(220, 38, 38, 0.92)',
         1,
         'rgba(127, 29, 29, 0.97)',
       ]);
     } catch (e, stack) {
       print('❌ Error: $e');
-      print('❌ Stack: $stack');
     }
   }
 
@@ -879,37 +848,37 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    _isDarkMode = isDark;
+
+    final bgGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: isDark
+          ? [AppColors.bgDarkStart, AppColors.bgDarkEnd]
+          : [AppColors.bgLightStart, AppColors.bgLightEnd],
+    );
+    final glassColor = isDark ? AppColors.glassDark : AppColors.glassLight;
+    final textColorMain = isDark
+        ? AppColors.textDarkMain
+        : AppColors.textLightMain;
+    final textColorSub = isDark
+        ? AppColors.textDarkSub
+        : AppColors.textLightSub;
+    final accentColor = isDark
+        ? AppColors.primaryBurgundyDark
+        : AppColors.primaryBurgundyLight;
+    final iconColor = isDark
+        ? AppColors.secondaryRoseGold
+        : AppColors.secondaryTaupe;
+
     return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text(
-          "Safe Sprout",
-          style: TextStyle(
-            color: _textDark,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _showRiskHeatmap ? Icons.thermostat : Icons.thermostat_outlined,
-              color: _showRiskHeatmap ? _primaryColor : _textLight,
-            ),
-            onPressed: _toggleHeatmap,
-          ),
-          IconButton(
-            icon: const Icon(Icons.sos, color: _primaryColor, size: 28),
-            onPressed: _triggerSOS,
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
       body: Stack(
         children: [
-          // --- MAP LAYER ---
+          // 1. Background Gradient
+          Container(decoration: BoxDecoration(gradient: bgGradient)),
+
+          // 2. Map Widget
           mapbox.MapWidget(
             styleUri: MapboxStyles.MAPBOX_STREETS,
             onMapCreated: _onMapCreated,
@@ -917,233 +886,499 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                 _add3DBuildings(),
           ),
 
-          // --- LOADING INDICATOR ---
-          if (isLoading)
-            const Center(
-              child: CircularProgressIndicator(color: _primaryColor),
-            ),
+          // 3. Loading Indicator
+          if (isLoading) const Center(child: CircularProgressIndicator()),
 
-          // --- TOP SEARCH CARD ---
+          // 4. Compact Top Search Bar (Side-by-Side)
           Positioned(
-            top: 10,
+            top: 50,
             left: 16,
             right: 16,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _cardColor,
-                borderRadius: BorderRadius.circular(25),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
                   ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  _buildModernSearchBox(
-                    controller: _sourceController,
-                    hint: "Starting point",
-                    suggestions: _sourceSuggestions,
-                    visible: _showSourceSuggestions,
-                    onSelect: (p) => _selectSuggestion(p, true),
-                    onClear: () => setState(() {
-                      _showSourceSuggestions = false;
-                      _sourceSuggestions = [];
-                    }),
+                  decoration: BoxDecoration(
+                    color: glassColor,
+                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  _buildModernSearchBox(
-                    controller: _destController,
-                    hint: "Destination",
-                    suggestions: _destSuggestions,
-                    visible: _showDestSuggestions,
-                    onSelect: (p) => _selectSuggestion(p, false),
-                    onClear: () {
-                      setState(() {
-                        _showDestSuggestions = false;
-                        _destSuggestions = [];
-                      });
-                      _clearRoute();
-                    },
+                  child: Row(
+                    children: [
+                      // Source Field
+                      Expanded(
+                        child: _buildCompactSearchField(
+                          controller: _sourceController,
+                          hint: "From",
+                          suggestions: _sourceSuggestions,
+                          visible: _showSourceSuggestions,
+                          onSelect: (p) => _selectSuggestion(p, true),
+                          onClear: () => setState(() {
+                            _showSourceSuggestions = false;
+                            _sourceSuggestions = [];
+                          }),
+                          textColor: textColorMain,
+                          subColor: textColorSub,
+                          iconColor: iconColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Destination Field
+                      Expanded(
+                        child: _buildCompactSearchField(
+                          controller: _destController,
+                          hint: "To",
+                          suggestions: _destSuggestions,
+                          visible: _showDestSuggestions,
+                          onSelect: (p) => _selectSuggestion(p, false),
+                          onClear: () {
+                            setState(() {
+                              _showDestSuggestions = false;
+                              _destSuggestions = [];
+                            });
+                            _clearRoute();
+                          },
+                          textColor: textColorMain,
+                          subColor: textColorSub,
+                          iconColor: iconColor,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
 
-          // --- ROUTE SELECTION CARD ---
+          // 5. Route Selection Card (Moved down slightly to avoid search bar)
           if (_routeOptions.length > 1 &&
               destination != null &&
               !_isJourneyActive)
             Positioned(
-              top: 160,
+              top: 130,
               left: 16,
               right: 16,
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 180),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _cardColor,
-                  borderRadius: BorderRadius.circular(25),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: glassColor,
+                      border: Border.all(color: Colors.white.withOpacity(0.2)),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
+                          blurRadius: 15,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '🗺️ Choose Route',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: _textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: _routeOptions.length,
-                        itemBuilder: (ctx, i) {
-                          final option = _routeOptions[i];
-                          final isSelected = i == _selectedRouteIndex;
-                          return GestureDetector(
-                            onTap: () {
-                              setState(() => _selectedRouteIndex = i);
-                              _drawSelectedRoute();
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? _bgColor.withOpacity(0.3)
-                                    : Colors.grey[50],
-                                borderRadius: BorderRadius.circular(15),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? (option['label_color'] as Color)
-                                      : Colors.grey[200]!,
-                                  width: isSelected ? 2 : 1,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    isSelected
-                                        ? Icons.check_circle
-                                        : Icons.radio_button_unchecked,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '🗺️ Choose Route',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: textColorMain,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: _routeOptions.length,
+                            itemBuilder: (ctx, i) {
+                              final option = _routeOptions[i];
+                              final isSelected = i == _selectedRouteIndex;
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() => _selectedRouteIndex = i);
+                                  _drawSelectedRoute();
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
                                     color: isSelected
-                                        ? (option['label_color'] as Color)
-                                        : Colors.grey,
-                                    size: 20,
+                                        ? accentColor.withOpacity(0.1)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? accentColor
+                                          : Colors.white.withOpacity(0.1),
+                                      width: isSelected ? 2 : 1,
+                                    ),
                                   ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        isSelected
+                                            ? Icons.check_circle
+                                            : Icons.radio_button_unchecked,
+                                        color: isSelected
+                                            ? accentColor
+                                            : iconColor,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              option['label'] ?? 'Route',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: option['label_color'],
-                                                fontSize: 13,
-                                              ),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  option['label'] ?? 'Route',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color:
+                                                        option['label_color'],
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${(option['duration'] / 60).toStringAsFixed(0)} min',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: textColorSub,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            const SizedBox(width: 6),
                                             Text(
-                                              '${(option['duration'] / 60).toStringAsFixed(0)} min',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: _textLight,
+                                              '${(option['distance'] / 1000).toStringAsFixed(1)} km • ${option['safe_percentage'].toStringAsFixed(0)}% safe',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                color: textColorSub,
                                               ),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '${(option['distance'] / 1000).toStringAsFixed(1)} km • ${option['safe_percentage'].toStringAsFixed(0)}% safe',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: _textLight,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
 
-          // --- BOTTOM ACTION CARD ---
-          if (destination != null || _isJourneyActive)
-            Positioned(
-              bottom: 20,
-              left: 20,
-              right: 20,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      // ✅ FIX: Removed Green Glow. Now always subtle grey/black.
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                      spreadRadius: 0,
+          // 6. Bottom Action Area (SOS + Risk Toggle + Start Button)
+          Positioned(
+            bottom: 20,
+            left: 16,
+            right: 16,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Floating Action Row: SOS & Risk Toggle
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // Risk Toggle Button
+                    GestureDetector(
+                      onTap: _toggleHeatmap,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(35),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: glassColor,
+                              border: Border.all(
+                                color: _showRiskHeatmap
+                                    ? AppColors.riskRed
+                                    : Colors.white.withOpacity(0.3),
+                              ),
+                              borderRadius: BorderRadius.circular(35),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.thermostat,
+                                  color: _showRiskHeatmap
+                                      ? AppColors.riskRed
+                                      : iconColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _showRiskHeatmap ? "Risk On" : "Risk Off",
+                                  style: TextStyle(
+                                    color: _showRiskHeatmap
+                                        ? AppColors.riskRed
+                                        : iconColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // SOS Button
+                    GestureDetector(
+                      onTap: _triggerSOS,
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: accentColor,
+                          boxShadow: [
+                            BoxShadow(
+                              color: accentColor.withOpacity(0.4),
+                              blurRadius: 15,
+                              spreadRadius: 2,
+                            ),
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.sos,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
                     ),
                   ],
-                  // ✅ FIX: Removed Green Border
-                  border: null,
                 ),
-                child: _isJourneyActive
-                    ? _buildTrackingCard()
-                    : _buildStartButtonCard(),
-              ),
+
+                const SizedBox(height: 16),
+
+                // Start Journey Card
+                if (destination != null || _isJourneyActive)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(30),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: glassColor,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.2),
+                          ),
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(
+                                isDark ? 0.4 : 0.1,
+                              ),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: _isJourneyActive
+                            ? _buildTrackingCard(
+                                textColorMain,
+                                textColorSub,
+                                accentColor,
+                              )
+                            : _buildStartButtonCard(
+                                textColorMain,
+                                textColorSub,
+                                accentColor,
+                                iconColor,
+                              ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildStartButtonCard() {
+  // ✅ New Compact Search Field Widget
+  Widget _buildCompactSearchField({
+    required TextEditingController controller,
+    required String hint,
+    required List<Map<String, dynamic>> suggestions,
+    required bool visible,
+    required Function(Map<String, dynamic>) onSelect,
+    required VoidCallback onClear,
+    required Color textColor,
+    required Color subColor,
+    required Color iconColor,
+  }) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.grey.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: TextField(
+            controller: controller,
+            style: TextStyle(color: textColor, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(color: subColor, fontSize: 12),
+              prefixIcon: Icon(Icons.location_on, color: iconColor, size: 16),
+              suffixIcon: controller.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear, size: 14, color: iconColor),
+                      onPressed: onClear,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              isDense: true,
+            ),
+          ),
+        ),
+        if (visible && suggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            constraints: const BoxConstraints(maxHeight: 150),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.95),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10),
+              ],
+            ),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: suggestions.length,
+              itemBuilder: (ctx, i) => ListTile(
+                dense: true,
+                leading: Icon(Icons.location_on, size: 16, color: iconColor),
+                title: Text(
+                  suggestions[i]['display_name'],
+                  style: TextStyle(fontSize: 11, color: textColor),
+                ),
+                onTap: () => onSelect(suggestions[i]),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildGlassButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    required Color glassColor,
+    required Color iconColor,
+    String? label,
+    bool isActive = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: glassColor,
+              border: Border.all(
+                color: isActive
+                    ? AppColors.riskRed
+                    : Colors.white.withOpacity(0.3),
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  color: isActive ? AppColors.riskRed : iconColor,
+                  size: 20,
+                ),
+                if (label != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: isActive ? AppColors.riskRed : iconColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStartButtonCard(
+    Color textMain,
+    Color textSub,
+    Color accent,
+    Color iconCol,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 1. Trip Info Header
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: _bgColor,
-                    borderRadius: BorderRadius.circular(12),
+                    color: accent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
                     _profile == 'walking'
@@ -1151,48 +1386,51 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                         : _profile == 'cycling'
                         ? Icons.directions_bike
                         : Icons.directions_car,
-                    color: _primaryColor,
-                    size: 20,
+                    color: accent,
+                    size: 18,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Ready to go?',
-                      style: TextStyle(color: _textLight, fontSize: 12),
+                      'Ready?',
+                      style: TextStyle(color: textSub, fontSize: 11),
                     ),
                     Text(
-                      '${_routeDuration ?? '-- min'} • ${_routeDistance ?? '-- km'}',
+                      '${_routeDuration ?? '--'} • ${_routeDistance ?? '--'}',
                       style: TextStyle(
-                        color: _textDark,
+                        color: textMain,
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: 14,
                       ),
                     ),
                   ],
                 ),
               ],
             ),
-            // Safety Score Badge
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
+                color: AppColors.riskGreen.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.riskGreen.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.shield, size: 14, color: Colors.green),
+                  const Icon(
+                    Icons.shield,
+                    size: 12,
+                    color: AppColors.riskGreen,
+                  ),
                   const SizedBox(width: 4),
                   Text(
-                    '${_routeOptions.isNotEmpty ? _routeOptions[_selectedRouteIndex]['safe_percentage'].toStringAsFixed(0) : 0}% Safe',
+                    '${_routeOptions.isNotEmpty ? _routeOptions[_selectedRouteIndex]['safe_percentage'].toStringAsFixed(0) : 0}%',
                     style: const TextStyle(
-                      color: Colors.green,
+                      color: AppColors.riskGreen,
                       fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                      fontSize: 11,
                     ),
                   ),
                 ],
@@ -1200,48 +1438,38 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             ),
           ],
         ),
-
-        const SizedBox(height: 16),
-
-        // ✅ 2. MODE SELECTOR (Walk | Cycle | Drive)
+        const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildModeOption(Icons.directions_walk, 'walking'),
-            _buildModeOption(Icons.directions_bike, 'cycling'),
-            _buildModeOption(Icons.directions_car, 'driving'),
+            _buildModeOption(Icons.directions_walk, 'walking', accent, iconCol),
+            _buildModeOption(Icons.directions_bike, 'cycling', accent, iconCol),
+            _buildModeOption(Icons.directions_car, 'driving', accent, iconCol),
           ],
         ),
-
-        const SizedBox(height: 20),
-
-        // 3. Start Button
+        const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
-          height: 55,
+          height: 48,
           child: ElevatedButton(
             onPressed: _startJourney,
             style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryColor,
+              backgroundColor: accent,
               foregroundColor: Colors.white,
-              elevation: 10,
-              shadowColor: _primaryColor.withOpacity(0.4),
+              elevation: 0,
+              shadowColor: accent.withOpacity(0.4),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
               ),
             ),
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.navigation, size: 20),
-                SizedBox(width: 10),
+                Icon(Icons.navigation, size: 18),
+                SizedBox(width: 8),
                 Text(
-                  'Start Safe Journey',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
+                  'Start Journey',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -1251,194 +1479,113 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     );
   }
 
-  // ✅ Helper Widget for Mode Options (MOVED INSIDE STATE CLASS)
-  Widget _buildModeOption(IconData icon, String mode) {
+  Widget _buildModeOption(
+    IconData icon,
+    String mode,
+    Color accent,
+    Color iconCol,
+  ) {
     bool isActive = _profile == mode;
     return GestureDetector(
       onTap: () {
         setState(() => _profile = mode);
-        // Redraw route if both points are set
-        if (origin != null && destination != null) {
+        if (origin != null && destination != null)
           _drawRoute(origin!, destination!);
-        }
       },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? _primaryColor : Colors.grey[100],
-          borderRadius: BorderRadius.circular(15),
+          color: isActive ? accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive ? accent : Colors.white.withOpacity(0.2),
+          ),
         ),
-        child: Icon(
-          icon,
-          color: isActive ? Colors.white : _textLight,
-          size: 24,
-        ),
+        child: Icon(icon, color: isActive ? Colors.white : iconCol, size: 20),
       ),
     );
   }
 
-  Widget _buildTrackingCard() {
+  Widget _buildTrackingCard(Color textMain, Color textSub, Color accent) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Row(
+            Row(
               children: [
-                // ✅ Changed Icon Color to Primary (Coral) instead of Green
-                Icon(
-                  Icons.radio_button_checked,
-                  color: _primaryColor,
-                  size: 16,
-                ),
-                SizedBox(width: 8),
+                Icon(Icons.radio_button_checked, color: accent, size: 14),
+                const SizedBox(width: 6),
                 Text(
-                  'Journey in Progress',
+                  'In Progress',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: _textDark,
-                    fontSize: 16,
+                    color: textMain,
+                    fontSize: 14,
                   ),
                 ),
               ],
             ),
             Text(
-              _currentETA ?? '-- min',
-              style: TextStyle(color: _textLight, fontWeight: FontWeight.w600),
+              _currentETA ?? '--',
+              style: TextStyle(
+                color: textSub,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         ClipRRect(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
           child: LinearProgressIndicator(
             value: _journeyProgress,
-            backgroundColor: Colors.grey[200],
-            // ✅ Changed Progress Color to Primary (Coral) instead of Green
-            valueColor: const AlwaysStoppedAnimation<Color>(_primaryColor),
-            minHeight: 8,
+            backgroundColor: Colors.grey.withOpacity(0.2),
+            valueColor: AlwaysStoppedAnimation<Color>(accent),
+            minHeight: 6,
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _shareCurrentLocation,
-                icon: const Icon(Icons.share_location, size: 18),
-                label: const Text('Share Location'),
+                icon: const Icon(Icons.share_location, size: 16),
+                label: const Text('Share'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: _textDark,
-                  side: const BorderSide(color: Colors.grey),
+                  foregroundColor: textMain,
+                  side: BorderSide(color: Colors.white.withOpacity(0.2)),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: ElevatedButton(
                 onPressed: _endJourney,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red[50],
-                  foregroundColor: Colors.red[700],
+                  backgroundColor: Colors.red.withOpacity(0.1),
+                  foregroundColor: Colors.red,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
                 child: const Text(
-                  'End Trip',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  'End',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                 ),
               ),
             ),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _buildModernSearchBox({
-    required TextEditingController controller,
-    required String hint,
-    required List<Map<String, dynamic>> suggestions,
-    required bool visible,
-    required Function(Map<String, dynamic>) onSelect,
-    required VoidCallback onClear,
-  }) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.grey[100],
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(color: _textLight, fontSize: 14),
-              prefixIcon: const Icon(Icons.search, color: _textLight, size: 20),
-              suffixIcon: controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(
-                        Icons.clear,
-                        size: 18,
-                        color: _textLight,
-                      ),
-                      onPressed: onClear,
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-        ),
-        if (visible && suggestions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            constraints: const BoxConstraints(maxHeight: 200),
-            decoration: BoxDecoration(
-              color: _cardColor,
-              borderRadius: BorderRadius.circular(15),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                ),
-              ],
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: suggestions.length,
-              itemBuilder: (ctx, i) => ListTile(
-                leading: const Icon(
-                  Icons.location_on,
-                  size: 18,
-                  color: _textLight,
-                ),
-                title: Text(
-                  suggestions[i]['display_name'],
-                  style: const TextStyle(fontSize: 13, color: _textDark),
-                ),
-                subtitle: Text(
-                  suggestions[i]['display_name']
-                      .split(',')
-                      .skip(1)
-                      .take(2)
-                      .join(','),
-                  style: const TextStyle(fontSize: 11, color: _textLight),
-                ),
-                onTap: () => onSelect(suggestions[i]),
-              ),
-            ),
-          ),
       ],
     );
   }

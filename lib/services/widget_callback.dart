@@ -25,4 +25,4 @@ Future<void> widgetCallback() async {
   } catch (e) {
     print('❌ Failed to send SOS from widget: $e');
   }
-}
+} 

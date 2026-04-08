@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:noor_new/theme/theme_provider.dart';
 import 'package:provider/provider.dart';
-import 'theme/theme_provider.dart';
+import 'theme/app_theme.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -15,6 +16,7 @@ class ProfilePage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Profile'),
         backgroundColor: Colors.transparent,
+        
         elevation: 0,
       ),
       body: ListView(

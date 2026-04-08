@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:noor_new/theme/theme_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'home_page.dart';
-import 'theme/theme_provider.dart';
 import 'theme/app_theme.dart';
+import 'theme/app_colors.dart';
 import 'services/fake_call_service.dart';
-
+import 'theme/app_colors.dart';
+import 'theme/app_theme.dart';
 // MUST be top-level for background execution
 @pragma('vm:entry-point')
 Future<void> backgroundCallback(int id) async {
@@ -114,9 +116,7 @@ class MyApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: lightTheme,
           darkTheme: darkTheme,
-          themeMode: themeProvider.isDarkMode
-              ? ThemeMode.dark
-              : ThemeMode.light,
+          themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: const HomePage(),
         );
       },
