@@ -560,7 +560,7 @@ class _HomePageContentState extends State<HomePageContent> {
         // 2. Main Content
         SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -571,7 +571,42 @@ class _HomePageContentState extends State<HomePageContent> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+        Padding(
+  padding: const EdgeInsets.only(top: 8),
+  child: Row(
+    children: [
+      CircleAvatar(
+        radius: 20,
+        backgroundColor: AppColors.primaryBurgundyLight,
+        child: const Icon(Icons.person, color: Colors.white),
+      ),
+      const SizedBox(width: 12),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Hi, User!',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: textColorMain,
+            ),
+          ),
+          Text(
+            'Stay safe today',
+            style: TextStyle(
+              fontSize: 12,
+              color: textColorSub,
+            ),
+          ),
+        ],
+      ),
+    ],
+  ),
+),
+
+const SizedBox(height: 23),
 
                 // ✅ EMERGENCY GRID
                 GridView.builder(
@@ -579,8 +614,8 @@ class _HomePageContentState extends State<HomePageContent> {
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
                     childAspectRatio: 1.6,
                   ),
                   itemCount: _emergencyNumbers.length,
@@ -599,7 +634,7 @@ class _HomePageContentState extends State<HomePageContent> {
                   },
                 ),
 
-                const SizedBox(height: 48),
+                const SizedBox(height: 20),
 
                 // // ✅ REDESIGNED SOS BUTTON
                 // Center(
@@ -729,8 +764,8 @@ Center(
           );
         },
         child: Container(
-          width: 180,
-          height: 180,
+          width: 160,
+          height: 160,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: isDark 
@@ -813,20 +848,22 @@ Center(
                           width: 240,  // Slightly wider to fit horizontal text
                           height: 70,  // Thin height
                           decoration: BoxDecoration(
-                            color: glassColor,
-                            border: Border.all(
-                              color: borderColor,
-                              width: 1,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
+                           color: glassColor,
+        border: Border.all(
+          color: isDark 
+              ? AppColors.primaryBurgundyLight.withValues(alpha: 0.6) 
+              : AppColors.primaryBurgundyLight.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
