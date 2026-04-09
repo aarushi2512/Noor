@@ -27,6 +27,13 @@ import 'dart:async';
 import 'package:noor_new/theme/app_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+// ✅ FCM import REMOVED
+
+import 'home_page.dart';
+import 'theme/app_theme.dart';
+import 'theme/app_colors.dart';
+import 'services/fake_call_service.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -133,7 +140,11 @@ class _HomePageContentState extends State<HomePageContent> {
     _requestNotificationPermission();
     _startDangerZoneMonitoring();
     _startBatteryMonitoring();
+
+    // ✅ FCM init call REMOVED
   }
+
+  // ✅ _initializeFCM() method REMOVED
 
   Future<void> _requestNotificationPermission() async {
     if (await Permission.notification.isDenied) {
@@ -392,18 +403,52 @@ class _HomePageContentState extends State<HomePageContent> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Row(
+            content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('SOS alert sent to trusted contacts!'),
+                // Using a Container for a subtle glow effect on the icon
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'SOS alert sent to trusted contacts!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               ],
             ),
-            backgroundColor: Colors.green,
+            backgroundColor: const Color(
+              0xFF2D6A4F,
+            ), // A deeper, premium forest green
             duration: const Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
+            elevation: 0, // Flat design looks better with floating behavior
+            margin: const EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              110,
+            ), // Elevated to sit above the bottom nav
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 1,
+              ),
             ),
           ),
         );
@@ -544,6 +589,8 @@ class _HomePageContentState extends State<HomePageContent> {
     }
   }
 
+  // ✅ _triggerDemoRiskAlert() method REMOVED
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -580,8 +627,11 @@ class _HomePageContentState extends State<HomePageContent> {
                   fit: BoxFit.cover,
                   alignment: Alignment.center,
                   colorFilter: ColorFilter.mode(
-                    isDark ? Colors.black.withOpacity(0.8) : Colors.white.withOpacity(0.3),
-                    BlendMode.softLight,),
+                    isDark
+                        ? Colors.black.withOpacity(0.8)
+                        : Colors.white.withOpacity(0.3),
+                    BlendMode.softLight,
+                  ),
                 ),
               ),
             ),
@@ -773,6 +823,8 @@ class _HomePageContentState extends State<HomePageContent> {
                         ),
                       ),
                       const SizedBox(height: 12),
+
+                      // ✅ Demo button REMOVED
                     ],
                   ),
                 ),
@@ -1028,7 +1080,7 @@ class _HomePageContentState extends State<HomePageContent> {
     );
   }
 
-    Widget _buildGlassEmergencyCard({
+  Widget _buildGlassEmergencyCard({
     required String title,
     required String number,
     required IconData icon,
@@ -1119,11 +1171,16 @@ class _HomePageContentState extends State<HomePageContent> {
     );
   }
 
-     //  Helper: Get Theme-Matching Colors based on Risk Level
+     // ✅ Helper: Get Theme-Matching Colors based on Risk Level
   Color _getRiskColor(String level) {
     switch (level.toLowerCase()) {
       case 'low':
-        return const Color.fromARGB(255, 4, 86, 31); // Muted Sage Green (Matches UI better than bright green)
+        return const Color.fromARGB(
+          255,
+          4,
+          86,
+          31,
+        ); // Muted Sage Green (Matches UI better than bright green)
       case 'moderate':
         return AppColors.riskYellow; // Amber
       case 'high':
