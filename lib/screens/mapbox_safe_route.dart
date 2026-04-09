@@ -1239,74 +1239,91 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   }
 
   // ✅ New Compact Search Field Widget
-  Widget _buildCompactSearchField({
-    required TextEditingController controller,
-    required String hint,
-    required List<Map<String, dynamic>> suggestions,
-    required bool visible,
-    required Function(Map<String, dynamic>) onSelect,
-    required VoidCallback onClear,
-    required Color textColor,
-    required Color subColor,
-    required Color iconColor,
-  }) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.grey.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: TextField(
-            controller: controller,
-            style: TextStyle(color: textColor, fontSize: 13),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(color: subColor, fontSize: 12),
-              prefixIcon: Icon(Icons.location_on, color: iconColor, size: 16),
-              suffixIcon: controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: Icon(Icons.clear, size: 14, color: iconColor),
-                      onPressed: onClear,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-              isDense: true,
-            ),
+// ✅ FIXED: Compact Search Field with Floating Suggestions
+Widget _buildCompactSearchField({
+  required TextEditingController controller,
+  required String hint,
+  required List<Map<String, dynamic>> suggestions,
+  required bool visible,
+  required Function(Map<String, dynamic>) onSelect,
+  required VoidCallback onClear,
+  required Color textColor,
+  required Color subColor,
+  required Color iconColor,
+}) {
+  return Stack(  // ← Wrap everything in Stack
+    children: [
+      // 1. The Search Input (always visible, fixed position)
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: TextField(
+          controller: controller,
+          style: TextStyle(color: textColor, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: subColor, fontSize: 12),
+            prefixIcon: Icon(Icons.location_on, color: iconColor, size: 16),
+            suffixIcon: controller.text.isNotEmpty
+                ? IconButton(
+                    icon: Icon(Icons.clear, size: 14, color: iconColor),
+                    onPressed: onClear,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+            isDense: true,
           ),
         ),
-        if (visible && suggestions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            constraints: const BoxConstraints(maxHeight: 150),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.95),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10),
-              ],
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: suggestions.length,
-              itemBuilder: (ctx, i) => ListTile(
-                dense: true,
-                leading: Icon(Icons.location_on, size: 16, color: iconColor),
-                title: Text(
-                  suggestions[i]['display_name'],
-                  style: TextStyle(fontSize: 11, color: textColor),
+      ),
+      
+      // 2. Floating Suggestions Dropdown (appears below, doesn't push)
+      if (visible && suggestions.isNotEmpty)
+        Positioned(  // ← Positioned so it floats
+          top: 45,   // ← Position below the input field
+          left: 0,
+          right: 0,
+          child: Material(  // ← Material gives it proper elevation
+            color: Colors.transparent,
+            child: Container(
+              constraints: const BoxConstraints(maxHeight: 150),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.95),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 15,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: suggestions.length > 4 ? 4 : suggestions.length,
+                itemBuilder: (ctx, i) => ListTile(
+                  dense: true,
+                  leading: Icon(Icons.location_on, size: 16, color: iconColor),
+                  title: Text(
+                    suggestions[i]['display_name'],
+                    style: TextStyle(fontSize: 11, color: textColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => onSelect(suggestions[i]),
                 ),
-                onTap: () => onSelect(suggestions[i]),
               ),
             ),
           ),
-      ],
-    );
-  }
+        ),
+    ],
+  );
+}
 
   Widget _buildGlassButton({
     required IconData icon,
