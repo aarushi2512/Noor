@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:noor_new/theme/theme_provider.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 import 'home_page.dart';
+import 'theme/theme_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_colors.dart';
+import 'providers/auth_provider.dart';
 import 'services/fake_call_service.dart';
-import 'theme/app_colors.dart';
-import 'theme/app_theme.dart';
+
 // MUST be top-level for background execution
 @pragma('vm:entry-point')
 Future<void> backgroundCallback(int id) async {
   debugPrint('🔔 Background alarm triggered! ID: $id');
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ Firebase for background tasks (optional but safe)
+  await Firebase.initializeApp();
 
   final prefs = await SharedPreferences.getInstance();
   final name = prefs.getString('fake_call_name_$id') ?? 'Unknown';
@@ -34,7 +39,6 @@ Future<void> backgroundCallback(int id) async {
     iOS: iosSettings,
   );
 
-  // ✅ FIX: Use 'settings' named parameter
   await notifications.initialize(settings: initSettings);
 
   await notifications.show(
@@ -55,8 +59,13 @@ Future<void> backgroundCallback(int id) async {
 }
 
 Future<void> main() async {
+  // ✅ 1. Initialize Flutter bindings FIRST
   WidgetsFlutterBinding.ensureInitialized();
   
+  // ✅ 2. Initialize Firebase BEFORE anything else
+  await Firebase.initializeApp();
+  
+  // ✅ 3. Initialize other services
   final FlutterLocalNotificationsPlugin notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
@@ -71,10 +80,8 @@ Future<void> main() async {
     iOS: initializationSettingsIOS,
   );
 
-  // ✅ FIX 1: Use 'settings' named parameter here too
   await notificationsPlugin.initialize(settings: initializationSettings);
 
-  // ✅ FIX 2: Create Channel properly for Android
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'danger_zone_channel',
     'Danger Zone Alerts',
@@ -85,7 +92,6 @@ Future<void> main() async {
     showBadge: true,
   );
 
-  // Check if running on Android before creating channel
   await notificationsPlugin
       .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin
@@ -96,9 +102,13 @@ Future<void> main() async {
   await AndroidAlarmManager.initialize();
   await FakeCallService().initialize();
 
+  // ✅ 4. NOW run the app with providers
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ],
       child: const MyApp(),
     ),
   );
@@ -112,11 +122,28 @@ class MyApp extends StatelessWidget {
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
         return MaterialApp(
-          title: 'Safe Sprout',
+          title: 'Noor - Women Safety',
+          
+          // ✅ Use your ThemeProvider's logic for themes
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF8B1A5D),
+              brightness: Brightness.light,
+            ),
+          ),
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF8B1A5D),
+              brightness: Brightness.dark,
+            ),
+          ),
+          themeMode: themeProvider.isDarkMode 
+              ? ThemeMode.dark 
+              : ThemeMode.light,
+          
           debugShowCheckedModeBanner: false,
-          theme: lightTheme,
-          darkTheme: darkTheme,
-          themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
           home: const HomePage(),
         );
       },

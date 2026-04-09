@@ -1,4 +1,7 @@
-import 'dart:ui'; // ✅ Essential for ImageFilter.blur
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import 'screens/login_page.dart';
+import 'dart:ui'; //  Essential for ImageFilter.blur
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
@@ -66,6 +69,15 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 👀 Check login state from Firebase
+    final authProvider = Provider.of<AuthProvider>(context);
+
+    // 🔒 If NOT logged in → Show Login Screen
+    if (!authProvider.isSignedIn) {
+      return const LoginPage();
+    }
+
+    // ✅ If logged in → Show Your Existing Home Screen
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       extendBody: true,

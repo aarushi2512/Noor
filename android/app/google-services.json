@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "950352714320",
+    "project_id": "safe-sprout-16904",
+    "storage_bucket": "safe-sprout-16904.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:950352714320:android:ea0f99ad13468257d2cf55",
+        "android_client_info": {
+          "package_name": "com.example.noor_new"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2iGFBSPDPMyrnr5kFZPBTIy4I08b_Vw8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
