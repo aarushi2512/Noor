@@ -5,12 +5,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// ✅ Keep only your original imports
 import 'home_page.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_colors.dart';
 import 'services/fake_call_service.dart';
-import 'theme/app_colors.dart';
-import 'theme/app_theme.dart';
+
 // MUST be top-level for background execution
 @pragma('vm:entry-point')
 Future<void> backgroundCallback(int id) async {
@@ -26,15 +27,12 @@ Future<void> backgroundCallback(int id) async {
 
   final notifications = FlutterLocalNotificationsPlugin();
 
-  const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-  const iosSettings = DarwinInitializationSettings();
-
   const initSettings = InitializationSettings(
-    android: androidSettings,
-    iOS: iosSettings,
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    iOS: DarwinInitializationSettings(),
   );
 
-  // ✅ FIX: Use 'settings' named parameter
+  // Using 'settings:' parameter as required by your local_notifications version
   await notifications.initialize(settings: initSettings);
 
   await notifications.show(
@@ -56,25 +54,21 @@ Future<void> backgroundCallback(int id) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // ✅ Firebase code REMOVED — back to your original init
+
   final FlutterLocalNotificationsPlugin notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-
-  const DarwinInitializationSettings initializationSettingsIOS =
-      DarwinInitializationSettings();
-
   const InitializationSettings initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-    iOS: initializationSettingsIOS,
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    iOS: DarwinInitializationSettings(),
   );
 
-  // ✅ FIX 1: Use 'settings' named parameter here too
+  // Fixed: Using 'settings:' named parameter
   await notificationsPlugin.initialize(settings: initializationSettings);
 
-  // ✅ FIX 2: Create Channel properly for Android
+  // Setup Danger Zone Channel (for your existing offline alerts)
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'danger_zone_channel',
     'Danger Zone Alerts',
@@ -85,16 +79,18 @@ Future<void> main() async {
     showBadge: true,
   );
 
-  // Check if running on Android before creating channel
   await notificationsPlugin
       .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin
       >()
       ?.createNotificationChannel(channel);
 
+  // Load environment variables and start services
   await dotenv.load(fileName: ".env");
   await AndroidAlarmManager.initialize();
   await FakeCallService().initialize();
+
+  // ✅ FCMService initialization REMOVED
 
   runApp(
     ChangeNotifierProvider(
@@ -116,7 +112,9 @@ class MyApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: lightTheme,
           darkTheme: darkTheme,
-          themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          themeMode: themeProvider.isDarkMode
+              ? ThemeMode.dark
+              : ThemeMode.light,
           home: const HomePage(),
         );
       },
