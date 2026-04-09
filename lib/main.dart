@@ -8,8 +8,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'home_page.dart';
 import 'theme/theme_provider.dart';
-import 'theme/app_theme.dart';
-import 'theme/app_colors.dart';
 import 'providers/auth_provider.dart';
 import 'services/fake_call_service.dart';
 
@@ -20,7 +18,7 @@ Future<void> backgroundCallback(int id) async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Firebase for background tasks (optional but safe)
+  // ✅ Firebase for background tasks
   await Firebase.initializeApp();
 
   final prefs = await SharedPreferences.getInstance();
