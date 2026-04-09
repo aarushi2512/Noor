@@ -31,7 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  google_fonts: ^6.1.0
+  google_fonts: ^8.0.2
   url_launcher: ^6.3.0
   contacts_service_plus: ^0.0.2
   dio: ^5.4.0
@@ -99,6 +99,8 @@ flutter:
     - assets/tiles/heat/heat_z13.png
     - assets/tiles/heat/heat_z15.png
     - assets/data/ncrb_mumbai_crimes.csv
+    - assets/images/bg_light.jpeg
+    - assets/images/bg_dark.jpeg
 
   # To add assets to your application, add an assets section, like this:
   # assets:

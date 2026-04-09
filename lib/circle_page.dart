@@ -333,7 +333,7 @@ class _CirclePageState extends State<CirclePage> {
     }
   }
 
-  // ✅ CORE FUNCTION: Reset Contacts (Kept exactly as requested)
+  // ✅ CORE FUNCTION: Reset Contacts
   Future<void> _resetContacts() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('trusted_contact_ids');
@@ -344,9 +344,7 @@ class _CirclePageState extends State<CirclePage> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            'All contacts reset successfully',
-          ), // ✅ Emoji removed, text professional
+          content: const Text('All contacts reset successfully'),
           backgroundColor: AppColors.secondaryTaupe,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -362,13 +360,6 @@ class _CirclePageState extends State<CirclePage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Dynamic Theme Colors
-    final bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: isDark
-          ? [AppColors.bgDarkStart, AppColors.bgDarkEnd]
-          : [AppColors.bgLightStart, AppColors.bgLightEnd],
-    );
     final glassColor = isDark ? AppColors.glassDark : AppColors.glassLight;
     final textColorMain = isDark
         ? AppColors.textDarkMain
@@ -384,10 +375,42 @@ class _CirclePageState extends State<CirclePage> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Gradient Background
-          Container(decoration: BoxDecoration(gradient: bgGradient)),
+          // ✅ 1. BLURRED BACKGROUND IMAGE (Replaces Gradient)
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: 20,
+                sigmaY: 20,
+              ), // Strong blur for readability
+              child: Container(
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage(
+                      isDark ? AppColors.bgDarkImage : AppColors.bgLightImage,
+                    ),
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    // Optional: Slight overlay to ensure text contrast
+                    colorFilter: ColorFilter.mode(
+                      isDark
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.white.withOpacity(0.2),
+                      BlendMode.softLight,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
 
-          // 2. Content
+          // ✅ 2. Extra Overlay for Readability
+          Container(
+            color: isDark
+                ? Colors.black.withOpacity(0.4)
+                : Colors.white.withOpacity(0.3),
+          ),
+
+          // ✅ 3. Content
           SafeArea(
             child: Column(
               children: [
@@ -422,13 +445,11 @@ class _CirclePageState extends State<CirclePage> {
                             ),
                             Row(
                               children: [
-                                // ✅ Add Button (Clean Icon)
                                 IconButton(
                                   icon: Icon(Icons.add, color: accentColor),
                                   onPressed: _addContact,
                                   tooltip: 'Add Contact',
                                 ),
-                                // ✅ Reset Button (Kept as requested, styled professionally)
                                 IconButton(
                                   icon: Icon(
                                     Icons.refresh,

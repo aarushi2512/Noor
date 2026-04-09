@@ -37,13 +37,16 @@ class _AnimatedBottomNavState extends State<AnimatedBottomNav> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 20, left: 24, right: 24),
-      // ✅ REMOVED outer AnimatedContainer to prevent conflicting animations
+      margin: const EdgeInsets.only(
+        bottom: 20,
+        left: 16,
+        right: 16,
+      ), // ✅ Reduced side margin slightly
       child: AnimatedContainer(
-        // Only animate padding slightly if needed, but mostly let content drive size
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut, // ✅ Standard curve, no overshoot
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        curve: Curves.easeInOut,
+        // ✅ Reduced outer padding to save space
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         constraints: const BoxConstraints(minWidth: 100),
         decoration: BoxDecoration(
           color: widget.glassColor.withOpacity(0.15),
@@ -74,75 +77,78 @@ class _AnimatedBottomNavState extends State<AnimatedBottomNav> {
                 return GestureDetector(
                   onTap: () => widget.onTap(index),
                   behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    // ✅ Smooth, standard curve for item expansion
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isSelected ? 16 : 12,
-                      vertical: 12,
-                    ),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? widget.activeColor.withOpacity(0.25)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(25),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isSelected && item.activeIcon != null
-                              ? item.activeIcon!
-                              : item.icon,
-                          color: isSelected
-                              ? widget.activeColor
-                              : widget.inactiveColor,
-                          size: 24,
-                        ),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          // ✅ Custom transition to slide in smoothly without bounce
-                          transitionBuilder:
-                              (Widget child, Animation<double> animation) {
-                                return SlideTransition(
-                                  position:
-                                      Tween<Offset>(
-                                        begin: const Offset(
-                                          -0.3,
-                                          0.0,
-                                        ), // Smaller slide distance
-                                        end: Offset.zero,
-                                      ).animate(
-                                        CurvedAnimation(
-                                          parent: animation,
-                                          curve: Curves
-                                              .easeInOut, // ✅ Match the container curve
+                  child: Padding(
+                    // ✅ Reduced gap between items to prevent overflow
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      // ✅ Reduced internal padding to fit text comfortably without overflow
+                      // This still gives ~8px buffer around the text (covering the word + extra)
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? widget.activeColor.withOpacity(0.25)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isSelected && item.activeIcon != null
+                                ? item.activeIcon!
+                                : item.icon,
+                            color: isSelected
+                                ? widget.activeColor
+                                : widget.inactiveColor,
+                            size: 22, // ✅ Slightly smaller icon to save space
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            transitionBuilder:
+                                (Widget child, Animation<double> animation) {
+                                  return SlideTransition(
+                                    position:
+                                        Tween<Offset>(
+                                          begin: const Offset(-0.2, 0.0),
+                                          end: Offset.zero,
+                                        ).animate(
+                                          CurvedAnimation(
+                                            parent: animation,
+                                            curve: Curves.easeInOut,
+                                          ),
                                         ),
-                                      ),
-                                  child: FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  ),
-                                );
-                              },
-                          child: isSelected
-                              ? Padding(
-                                  padding: const EdgeInsets.only(left: 10),
-                                  child: Text(
-                                    item.label,
-                                    key: ValueKey(item.label),
-                                    style: TextStyle(
-                                      color: widget.activeColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
                                     ),
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                      ],
+                                  );
+                                },
+                            child: isSelected
+                                ? Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 6,
+                                    ), // ✅ Tighter spacing
+                                    child: Text(
+                                      item.label,
+                                      key: ValueKey(item.label),
+                                      style: TextStyle(
+                                        color: widget.activeColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize:
+                                            13, // ✅ Slightly smaller font to fit
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );

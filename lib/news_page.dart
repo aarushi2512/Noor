@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'dart:ui'; // ✅ Essential for BackdropFilter (Glass Effect)
+import 'dart:ui'; // ✅ Essential for BackdropFilter (Glass Effect & Blur)
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -218,17 +218,8 @@ class _NewsPageState extends State<NewsPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // ✅ 1. Define Dynamic Gradient & Glass Colors
-    final bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: isDark
-          ? [AppColors.bgDarkStart, AppColors.bgDarkEnd]
-          : [AppColors.bgLightStart, AppColors.bgLightEnd],
-    );
-
+    // ✅ Dynamic Colors
     final glassColor = isDark ? AppColors.glassDark : AppColors.glassLight;
-
     final textColorMain = isDark
         ? AppColors.textDarkMain
         : AppColors.textLightMain;
@@ -238,13 +229,45 @@ class _NewsPageState extends State<NewsPage> {
     final accentColor = isDark
         ? AppColors.primaryBurgundyDark
         : AppColors.primaryBurgundyLight;
-    final borderColor = Colors.white.withOpacity(0.3); // ✅ Crisp glass border
+    final borderColor = Colors.white.withOpacity(0.3);
 
     return Scaffold(
       body: Stack(
         children: [
-          // ✅ 2. Full Screen Gradient Background
-          Container(decoration: BoxDecoration(gradient: bgGradient)),
+          // ✅ 1. BLURRED BACKGROUND IMAGE (Replaces Gradient)
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: 20,
+                sigmaY: 20,
+              ), // Strong blur for readability
+              child: Container(
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage(
+                      isDark ? AppColors.bgDarkImage : AppColors.bgLightImage,
+                    ),
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    // Optional: Slight overlay to ensure text contrast
+                    colorFilter: ColorFilter.mode(
+                      isDark
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.white.withOpacity(0.2),
+                      BlendMode.softLight,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // ✅ 2. Extra Overlay for Readability (Optional but recommended)
+          Container(
+            color: isDark
+                ? Colors.black.withOpacity(0.4)
+                : Colors.white.withOpacity(0.3),
+          ),
 
           // ✅ 3. Content Layer
           SafeArea(
@@ -256,17 +279,14 @@ class _NewsPageState extends State<NewsPage> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
                     child: BackdropFilter(
-                      filter: ImageFilter.blur(
-                        sigmaX: 15,
-                        sigmaY: 15,
-                      ), // ✅ Strong Blur
+                      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: glassColor, // ✅ Transparent Glass Color
+                          color: glassColor,
                           border: Border.all(color: borderColor),
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
@@ -402,11 +422,10 @@ class _NewsPageState extends State<NewsPage> {
                                       filter: ImageFilter.blur(
                                         sigmaX: 10,
                                         sigmaY: 10,
-                                      ), // ✅ Glass Blur on Card
+                                      ),
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          color:
-                                              glassColor, // ✅ Transparent Glass Fill
+                                          color: glassColor,
                                           border: Border.all(
                                             color: borderColor,
                                           ),

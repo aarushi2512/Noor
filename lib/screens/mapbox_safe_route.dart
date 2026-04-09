@@ -846,7 +846,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     }
   }
 
-  @override
+    @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     _isDarkMode = isDark;
@@ -889,85 +889,13 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           // 3. Loading Indicator
           if (isLoading) const Center(child: CircularProgressIndicator()),
 
-          // 4. Compact Top Search Bar (Side-by-Side)
-          Positioned(
-            top: 50,
-            left: 16,
-            right: 16,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: glassColor,
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      // Source Field
-                      Expanded(
-                        child: _buildCompactSearchField(
-                          controller: _sourceController,
-                          hint: "From",
-                          suggestions: _sourceSuggestions,
-                          visible: _showSourceSuggestions,
-                          onSelect: (p) => _selectSuggestion(p, true),
-                          onClear: () => setState(() {
-                            _showSourceSuggestions = false;
-                            _sourceSuggestions = [];
-                          }),
-                          textColor: textColorMain,
-                          subColor: textColorSub,
-                          iconColor: iconColor,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Destination Field
-                      Expanded(
-                        child: _buildCompactSearchField(
-                          controller: _destController,
-                          hint: "To",
-                          suggestions: _destSuggestions,
-                          visible: _showDestSuggestions,
-                          onSelect: (p) => _selectSuggestion(p, false),
-                          onClear: () {
-                            setState(() {
-                              _showDestSuggestions = false;
-                              _destSuggestions = [];
-                            });
-                            _clearRoute();
-                          },
-                          textColor: textColorMain,
-                          subColor: textColorSub,
-                          iconColor: iconColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // 5. Route Selection Card (Moved down slightly to avoid search bar)
+          // ✅ MOVED UP: Route Selection Card (Now BELOW search bar in Z-order)
+          // By placing this EARLIER in the list, it sits BEHIND the search bar
           if (_routeOptions.length > 1 &&
               destination != null &&
               !_isJourneyActive)
             Positioned(
-              top: 130,
+              top: 130, // Adjusted top to sit nicely below search
               left: 16,
               right: 16,
               child: ClipRRect(
@@ -1089,6 +1017,53 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
               ),
             ),
 
+          // ✅ NOW ON TOP: Search Bars (Painted LAST = Visible on Top)
+          Positioned(
+            top: 50,
+            left: 16,
+            right: 16,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildCompactSearchField(
+                    controller: _sourceController,
+                    hint: "From",
+                    suggestions: _sourceSuggestions,
+                    visible: _showSourceSuggestions,
+                    onSelect: (p) => _selectSuggestion(p, true),
+                    onClear: () => setState(() {
+                      _showSourceSuggestions = false;
+                      _sourceSuggestions = [];
+                    }),
+                    textColor: textColorMain,
+                    subColor: textColorSub,
+                    iconColor: iconColor,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildCompactSearchField(
+                    controller: _destController,
+                    hint: "To",
+                    suggestions: _destSuggestions,
+                    visible: _showDestSuggestions,
+                    onSelect: (p) => _selectSuggestion(p, false),
+                    onClear: () {
+                      setState(() {
+                        _showDestSuggestions = false;
+                        _destSuggestions = [];
+                      });
+                      _clearRoute();
+                    },
+                    textColor: textColorMain,
+                    subColor: textColorSub,
+                    iconColor: iconColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           // 6. Bottom Action Area (SOS + Risk Toggle + Start Button)
           Positioned(
             bottom: 20,
@@ -1097,11 +1072,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Floating Action Row: SOS & Risk Toggle
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    // Risk Toggle Button
                     GestureDetector(
                       onTap: _toggleHeatmap,
                       child: ClipRRect(
@@ -1157,7 +1130,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                       ),
                     ),
                     const SizedBox(width: 16),
-                    // SOS Button
                     GestureDetector(
                       onTap: _triggerSOS,
                       child: Container(
@@ -1188,10 +1160,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 16),
-
-                // Start Journey Card
                 if (destination != null || _isJourneyActive)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(30),
@@ -1239,6 +1208,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   }
 
   // ✅ New Compact Search Field Widget
+<<<<<<< HEAD
 // ✅ FIXED: Compact Search Field with Floating Suggestions
 Widget _buildCompactSearchField({
   required TextEditingController controller,
@@ -1306,14 +1276,122 @@ Widget _buildCompactSearchField({
               child: ListView.builder(
                 shrinkWrap: true,
                 itemCount: suggestions.length > 4 ? 4 : suggestions.length,
+=======
+    // ✅ MINIMAL FIX: Keeps your structure, forces Black text, prevents shift
+    // ✅ FINAL VERSION: Theme-aware Glass Inputs + Black Text + No Shift
+  Widget _buildCompactSearchField({
+    required TextEditingController controller,
+    required String hint,
+    required List<Map<String, dynamic>> suggestions,
+    required bool visible,
+    required Function(Map<String, dynamic>) onSelect,
+    required VoidCallback onClear,
+    required Color textColor,
+    required Color subColor,
+    required Color iconColor,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 1. Input Box (Glass Style matching your UI)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          decoration: BoxDecoration(
+            // ✅ Dynamic Glass Color
+            color: isDark
+                ? Colors.black.withOpacity(0.7)
+                : Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(12),
+            // ✅ Subtle Border
+            border: Border.all(
+              color: isDark ? Colors.white24 : Colors.grey.shade300,
+              width: 1,
+            ),
+            // ✅ Soft Shadow
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextField(
+            controller: controller,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(
+                color: subColor.withOpacity(0.7),
+                fontSize: 12,
+              ),
+              prefixIcon: Icon(
+                Icons.location_on_outlined,
+                color: iconColor,
+                size: 16,
+              ),
+              suffixIcon: controller.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.clear_rounded,
+                        size: 14,
+                        color: subColor,
+                      ),
+                      onPressed: onClear,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      splashRadius: 20,
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              isDense: true,
+            ),
+          ),
+        ),
+        // 2. Suggestions List
+        if (visible && suggestions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            constraints: const BoxConstraints(maxHeight: 150),
+            decoration: BoxDecoration(
+              color: Colors.white, // Solid white for readability
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: ListView.builder(
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                itemCount: suggestions.length,
+>>>>>>> bf11e30fe435bfdb37b837615751ffdecea2378b
                 itemBuilder: (ctx, i) => ListTile(
                   dense: true,
                   leading: Icon(Icons.location_on, size: 16, color: iconColor),
                   title: Text(
                     suggestions[i]['display_name'],
+<<<<<<< HEAD
                     style: TextStyle(fontSize: 11, color: textColor),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+=======
+                    // ✅ Force Black Text
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.black,
+                      fontWeight: FontWeight.w500,
+                    ),
+>>>>>>> bf11e30fe435bfdb37b837615751ffdecea2378b
                   ),
                   onTap: () => onSelect(suggestions[i]),
                 ),

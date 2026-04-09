@@ -99,13 +99,6 @@ class _ProfilePageState extends State<ProfilePage> {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     // Dynamic Theme Colors
-    final bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: isDark
-          ? [AppColors.bgDarkStart, AppColors.bgDarkEnd]
-          : [AppColors.bgLightStart, AppColors.bgLightEnd],
-    );
     final glassColor = isDark ? AppColors.glassDark : AppColors.glassLight;
     final textColorMain = isDark
         ? AppColors.textDarkMain
@@ -121,10 +114,42 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Gradient Background
-          Container(decoration: BoxDecoration(gradient: bgGradient)),
+          // ✅ 1. BLURRED BACKGROUND IMAGE (Replaces Gradient)
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: 20,
+                sigmaY: 20,
+              ), // Strong blur for readability
+              child: Container(
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage(
+                      isDark ? AppColors.bgDarkImage : AppColors.bgLightImage,
+                    ),
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    // Optional: Slight overlay to ensure text contrast
+                    colorFilter: ColorFilter.mode(
+                      isDark
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.white.withOpacity(0.2),
+                      BlendMode.softLight,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
 
-          // 2. Content
+          // ✅ 2. Extra Overlay for Readability
+          Container(
+            color: isDark
+                ? Colors.black.withOpacity(0.4)
+                : Colors.white.withOpacity(0.3),
+          ),
+
+          // ✅ 3. Content
           SafeArea(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -438,7 +463,6 @@ class _ProfilePageState extends State<ProfilePage> {
                               children: [
                                 Row(
                                   children: [
-                                    // ✅ Fixed: Changed shield_lock to lock_outline
                                     Icon(
                                       Icons.lock_outline,
                                       color: AppColors.riskRed,
@@ -493,7 +517,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ✅ Reusable Glass Card Widget (Now accepts colors as arguments)
+  // ✅ Reusable Glass Card Widget
   Widget _buildGlassCard({
     required Widget child,
     required Color glassColor,
