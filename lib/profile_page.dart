@@ -13,7 +13,7 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  // ✅ MOCK AUTH STATE
+  //  MOCK AUTH STATE
   bool _isLoggedIn = false;
   String _userName = "User";
   String _userEmail = "user@example.com";
@@ -37,7 +37,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Successfully signed in (Mock)'),
+          content: const Text('Successfully signed in'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -114,7 +114,7 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       body: Stack(
         children: [
-          // ✅ 1. BLURRED BACKGROUND IMAGE (Replaces Gradient)
+          //  1. BLURRED BACKGROUND IMAGE (Replaces Gradient)
           ClipRect(
             child: BackdropFilter(
               filter: ImageFilter.blur(
@@ -142,14 +142,14 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
 
-          // ✅ 2. Extra Overlay for Readability
+          //  2. Extra Overlay for Readability
           Container(
             color: isDark
                 ? Colors.black.withOpacity(0.4)
                 : Colors.white.withOpacity(0.3),
           ),
 
-          // ✅ 3. Content
+          //  3. Content
           SafeArea(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -517,7 +517,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ✅ Reusable Glass Card Widget
+  //  Reusable Glass Card Widget
   Widget _buildGlassCard({
     required Widget child,
     required Color glassColor,
@@ -548,7 +548,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // ✅ Reusable Action Tile
+  //  Reusable Action Tile
   Widget _buildActionTile({
     required IconData icon,
     required String title,

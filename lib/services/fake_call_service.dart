@@ -21,7 +21,7 @@ class FakeCallService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
-  // ✅ Initialize background services
+  //  Initialize background services
   Future<void> initialize() async {
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
@@ -34,11 +34,11 @@ class FakeCallService {
         iOS: iosSettings,
       ),
       onDidReceiveNotificationResponse: (response) {
-        debugPrint('🔔 Notification tapped: ${response.payload}');
+        debugPrint(' Notification tapped: ${response.payload}');
       },
     );
 
-    debugPrint('✅ FakeCallService initialized');
+    debugPrint(' FakeCallService initialized');
   }
 
   // 📞 Trigger immediate fake call
@@ -53,7 +53,7 @@ class FakeCallService {
 
     if (delay.isNegative) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ Please select a future time')),
+        const SnackBar(content: Text(' Please select a future time')),
       );
       return;
     }
@@ -62,12 +62,12 @@ class FakeCallService {
     _scheduledTimer?.cancel();
 
     // Debug logging
-    debugPrint('⏰ Scheduling call in ${delay.inSeconds} seconds');
-    debugPrint('⏰ Will trigger at ${call.scheduledTime}');
+    debugPrint(' Scheduling call in ${delay.inSeconds} seconds');
+    debugPrint(' Will trigger at ${call.scheduledTime}');
 
     // Schedule with Timer
     _scheduledTimer = Timer(delay, () {
-      debugPrint('🔔 Timer fired! Triggering fake call...');
+      debugPrint(' Timer fired! Triggering fake call...');
 
       // Ensure we're still mounted before showing UI
       if (context.mounted) {
@@ -86,7 +86,7 @@ class FakeCallService {
       ),
     );
   }
-  // 🔔 Start ringing
+  //  Start ringing
   Future<void> _startRinging() async {
     _isRinging = true;
 
@@ -108,14 +108,14 @@ class FakeCallService {
     }
   }
 
-  // 🔕 Stop ringing
+  //  Stop ringing
   Future<void> stopRinging() async {
     _isRinging = false;
     await Vibration.cancel();
     await FlutterRingtonePlayer().stop();
   }
 
-  // 📱 Show incoming call screen
+  //  Show incoming call screen
   void _showIncomingCallScreen(BuildContext context, FakeCall call) {
     Navigator.push(
       context,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'app_colors.dart'; // ✅ Imports the color constants
+import 'app_colors.dart'; 
 
-// ✅ LIGHT THEME
+//  LIGHT THEME
 final ThemeData lightTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.light,
@@ -43,7 +43,7 @@ final ThemeData lightTheme = ThemeData(
     ),
   ),
 
-  // ✅ FIXED: Changed CardTheme to CardThemeData
+  // FIXED: Changed CardTheme to CardThemeData
   cardTheme: CardThemeData(
     color: AppColors.glassLight,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -66,7 +66,7 @@ final ThemeData lightTheme = ThemeData(
   ),
 );
 
-// ✅ DARK THEME
+// DARK THEME
 final ThemeData darkTheme = ThemeData(
   useMaterial3: true,
   brightness: Brightness.dark,
@@ -108,7 +108,7 @@ final ThemeData darkTheme = ThemeData(
     ),
   ),
 
-  // ✅ FIXED: Changed CardTheme to CardThemeData
+  // FIXED: Changed CardTheme to CardThemeData
   cardTheme: CardThemeData(
     color: AppColors.glassDark,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),

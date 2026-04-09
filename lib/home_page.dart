@@ -678,7 +678,7 @@ class _HomePageContentState extends State<HomePageContent> {
 
                 const SizedBox(height: 15),
 
-                // ✅ EMERGENCY GRID (3 Columns, Square)
+                //  EMERGENCY GRID (3 Columns, Square)
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -706,7 +706,7 @@ class _HomePageContentState extends State<HomePageContent> {
 
                 const SizedBox(height: 20),
 
-                // ✅ SOS BUTTON
+                //  SOS BUTTON
                 Center(
                   child: Column(
                     children: [
@@ -817,7 +817,7 @@ class _HomePageContentState extends State<HomePageContent> {
                   ),
                 ),
 
-                // ✅ FLAT THIN GLASS RECTANGLE (Fake Call)
+                //  FLAT THIN GLASS RECTANGLE (Fake Call)
                 Center(
                   child: GestureDetector(
                     onTap: () {
@@ -1081,22 +1081,22 @@ class _HomePageContentState extends State<HomePageContent> {
     return GestureDetector(
       onTap: () => _dialNumber(number, title),
       child: ClipRRect(
-        // ✅ iOS Squircle Shape (Smooth radius)
+        // iOS Squircle Shape (Smooth radius)
         borderRadius: BorderRadius.circular(22),
         child: BackdropFilter(
-          // ✅ Heavy Frosted Glass Blur (Like iOS)
+          //  Heavy Frosted Glass Blur (Like iOS)
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
             decoration: BoxDecoration(
-              // ✅ Very subtle background tint (mostly transparent)
+              //  Very subtle background tint (mostly transparent)
               color: glassColor.withValues(alpha: 0.4),
-              // ✅ Thin, crisp white/light border
+              //  Thin, crisp white/light border
               border: Border.all(
                 color: Colors.white.withValues(alpha: 0.2),
                 width: 1.2,
               ),
               borderRadius: BorderRadius.circular(22),
-              // ✅ Subtle shadow for depth
+              //  Subtle shadow for depth
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.1),
@@ -1105,7 +1105,7 @@ class _HomePageContentState extends State<HomePageContent> {
                 ),
               ],
             ),
-            // ✅ Perfectly Centered Content
+            //  Perfectly Centered Content
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center, // Vertical Center
               crossAxisAlignment:
@@ -1159,7 +1159,7 @@ class _HomePageContentState extends State<HomePageContent> {
     );
   }
 
-  // ✅ Helper: Get Theme-Matching Colors based on Risk Level
+     // ✅ Helper: Get Theme-Matching Colors based on Risk Level
   Color _getRiskColor(String level) {
     switch (level.toLowerCase()) {
       case 'low':
@@ -1331,7 +1331,7 @@ class _HomePageContentState extends State<HomePageContent> {
                         value: "${(current.riskScore * 100).toInt()}%",
                         label: "${current.riskLevel} Risk",
                         color:
-                            riskColor, // ✅ Uses Sage/Burgundy instead of bright green
+                            riskColor, //  Uses Sage/Burgundy instead of bright green
                         bgColor: riskColor.withValues(alpha: 0.1),
                       ),
                     ),
@@ -1476,7 +1476,7 @@ class _HomePageContentState extends State<HomePageContent> {
     );
   }
 
-  // ✅ Helper: Stat Item
+  // Helper: Stat Item
   Widget _buildStatItem({
     required IconData icon,
     required String value,
@@ -1520,7 +1520,7 @@ class _HomePageContentState extends State<HomePageContent> {
     );
   }
 
-  // ✅ Helper: Mini Forecast
+  //  Helper: Mini Forecast
   Widget _buildMiniForecast({
     required String label,
     required String value,

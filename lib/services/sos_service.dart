@@ -6,8 +6,8 @@ class SOSService {
     final prefs = await SharedPreferences.getInstance();
     final contactPhones = prefs.getStringList('emergency_contact_phones') ?? [];
 
-    // 🔍 DEBUG: See exactly what's stored
-    print('📱 SOS DEBUG: Sending to phones = $contactPhones');
+    // DEBUG: See exactly what's stored
+    print('SOS DEBUG: Sending to phones = $contactPhones');
 
     if (contactPhones.isEmpty) {
       throw Exception(

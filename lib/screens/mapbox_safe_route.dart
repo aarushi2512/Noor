@@ -833,7 +833,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '⚠️ High risk: ${riskData['area_name'] ?? 'This area'}\nStay aware.',
+                  ' High risk: ${riskData['area_name'] ?? 'This area'}\nStay aware.',
                   style: const TextStyle(fontSize: 13),
                 ),
               ),
@@ -1017,7 +1017,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
               ),
             ),
 
-          // ✅ NOW ON TOP: Search Bars (Painted LAST = Visible on Top)
+          //  NOW ON TOP: Search Bars (Painted LAST = Visible on Top)
           Positioned(
             top: 50,
             left: 16,
@@ -1207,9 +1207,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     );
   }
 
-  // ✅ New Compact Search Field Widget
-    // ✅ MINIMAL FIX: Keeps your structure, forces Black text, prevents shift
-    // ✅ FINAL VERSION: Theme-aware Glass Inputs + Black Text + No Shift
+  //  New Compact Search Field Widget
+    //  MINIMAL FIX: Keeps your structure, forces Black text, prevents shift
+    //  FINAL VERSION: Theme-aware Glass Inputs + Black Text + No Shift
   Widget _buildCompactSearchField({
     required TextEditingController controller,
     required String hint,
@@ -1231,17 +1231,17 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           decoration: BoxDecoration(
-            // ✅ Dynamic Glass Color
+            //  Dynamic Glass Color
             color: isDark
                 ? Colors.black.withOpacity(0.7)
                 : Colors.white.withOpacity(0.95),
             borderRadius: BorderRadius.circular(12),
-            // ✅ Subtle Border
+            //  Subtle Border
             border: Border.all(
               color: isDark ? Colors.white24 : Colors.grey.shade300,
               width: 1,
             ),
-            // ✅ Soft Shadow
+            //  Soft Shadow
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.15),
@@ -1310,7 +1310,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                   leading: Icon(Icons.location_on, size: 16, color: iconColor),
                   title: Text(
                     suggestions[i]['display_name'],
-                    // ✅ Force Black Text
+                    //  Force Black Text
                     style: const TextStyle(
                       fontSize: 11,
                       color: Colors.black,
