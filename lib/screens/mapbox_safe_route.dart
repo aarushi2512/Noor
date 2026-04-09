@@ -3,7 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:ui'; // For BackdropFilter
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -40,12 +40,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   List<Map<String, dynamic>> _routeOptions = [];
   int _selectedRouteIndex = 0;
 
-  final TextEditingController _sourceController = TextEditingController();
-  final TextEditingController _destController = TextEditingController();
-  List<Map<String, dynamic>> _sourceSuggestions = [];
-  List<Map<String, dynamic>> _destSuggestions = [];
-  bool _showSourceSuggestions = false;
-  bool _showDestSuggestions = false;
+  // Autocomplete controllers (managed internally by Autocomplete widget)
+  TextEditingController? _sourceTextController;
+  TextEditingController? _destTextController;
 
   bool _isSelectingSuggestion = false;
   String _profile = 'walking';
@@ -55,7 +52,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
   final String _originMarkerId = 'origin-marker';
   final String _destMarkerId = 'dest-marker';
 
-  Timer? _searchTimer;
   StreamSubscription<geo.Position>? _locationSubscription;
   bool _isJourneyActive = false;
   double _journeyProgress = 0.0;
@@ -75,28 +71,13 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       MapboxOptions.setAccessToken(accessToken!);
     }
     _init();
-
-    _sourceController.addListener(() {
-      if (!_isSelectingSuggestion &&
-          _sourceController.text.length > 2 &&
-          _sourceController.text != 'Current Location') {
-        _debouncedSearch(_sourceController.text, true);
-      }
-    });
-
-    _destController.addListener(() {
-      if (!_isSelectingSuggestion && _destController.text.length > 2) {
-        _debouncedSearch(_destController.text, false);
-      }
-    });
   }
 
   @override
   void dispose() {
     _locationSubscription?.cancel();
-    _sourceController.dispose();
-    _destController.dispose();
-    _searchTimer?.cancel();
+    _sourceTextController?.dispose();
+    _destTextController?.dispose();
     super.dispose();
   }
 
@@ -120,7 +101,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             pos.latitude.toDouble(),
           ),
         );
-        _sourceController.text = 'Current Location';
+        _sourceTextController?.text = 'Current Location';
       });
       _moveCamera();
       _addOriginMarker();
@@ -129,7 +110,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
       if (!mounted) return;
       setState(() {
         origin = Point(coordinates: Position(72.8777, 19.0760));
-        _sourceController.text = 'Mumbai, India';
+        _sourceTextController?.text = 'Mumbai, India';
       });
       _moveCamera();
       _addOriginMarker();
@@ -182,54 +163,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     }
   }
 
-  void _debouncedSearch(String query, bool isSource) {
-    _searchTimer?.cancel();
-    _searchTimer = Timer(
-      const Duration(milliseconds: 300),
-      () => _onSearchChanged(query, isSource),
-    );
-  }
-
-  void _onSearchChanged(String query, bool isSource) async {
-    if (accessToken == null) return;
-    try {
-      final String proximity = origin != null
-          ? "&proximity=${origin!.coordinates.lng},${origin!.coordinates.lat}"
-          : "";
-      final url = Uri.parse(
-        'https://api.mapbox.com/geocoding/v5/mapbox.places/${Uri.encodeComponent(query)}.json'
-        '?access_token=$accessToken&limit=6&country=in$proximity&types=poi,address,neighborhood,place',
-      );
-      final response = await http.get(url);
-      if (response.statusCode == 200 && mounted) {
-        final data = jsonDecode(response.body);
-        final List features = data['features'];
-        final suggestions = features
-            .map(
-              (f) => {
-                'display_name': f['place_name'],
-                'lat': f['geometry']['coordinates'][1].toString(),
-                'lon': f['geometry']['coordinates'][0].toString(),
-              },
-            )
-            .toList();
-
-        if (!mounted) return;
-        setState(() {
-          if (isSource) {
-            _sourceSuggestions = suggestions.cast<Map<String, dynamic>>();
-            _showSourceSuggestions = true;
-          } else {
-            _destSuggestions = suggestions.cast<Map<String, dynamic>>();
-            _showDestSuggestions = true;
-          }
-        });
-      }
-    } catch (e) {
-      debugPrint('Search error: $e');
-    }
-  }
-
   void _selectSuggestion(Map<String, dynamic> place, bool isSource) {
     final lat = double.parse(place['lat']);
     final lng = double.parse(place['lon']);
@@ -240,15 +173,11 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     setState(() {
       if (isSource) {
         origin = Point(coordinates: Position(lng, lat));
-        _sourceController.text = place['display_name'].split(',').first;
-        _showSourceSuggestions = false;
-        _sourceSuggestions = [];
+        _sourceTextController?.text = place['display_name'].split(',').first;
         _addOriginMarker();
       } else {
         destination = Point(coordinates: Position(lng, lat));
-        _destController.text = place['display_name'].split(',').first;
-        _showDestSuggestions = false;
-        _destSuggestions = [];
+        _destTextController?.text = place['display_name'].split(',').first;
         _addDestMarker();
       }
     });
@@ -381,16 +310,16 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
         final isFastest = option['duration'] == fastestDuration;
         final isSafest = option['risk_score'] == safestRisk;
         if (isFastest && isSafest) {
-          option['label'] = '🟢 Best Overall';
+          option['label'] = 'Best Overall';
           option['label_color'] = AppColors.riskGreen;
         } else if (isSafest) {
-          option['label'] = '🟢 Safest';
+          option['label'] = 'Safest';
           option['label_color'] = AppColors.riskGreen;
         } else if (isFastest) {
-          option['label'] = '⚡ Fastest';
+          option['label'] = 'Fastest';
           option['label_color'] = AppColors.riskOrange;
         } else {
-          option['label'] = '🟡 Balanced';
+          option['label'] = 'Balanced';
           option['label_color'] = AppColors.riskYellow;
         }
       }
@@ -471,11 +400,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     if (!mounted) return;
     setState(() {
       destination = null;
-      _destController.clear();
+      _destTextController?.clear();
       _routeDistance = null;
       _routeDuration = null;
-      _showDestSuggestions = false;
-      _destSuggestions = [];
       _routeOptions = [];
       _selectedRouteIndex = 0;
     });
@@ -846,7 +773,185 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
     }
   }
 
-    @override
+  // ✅ NEW: Glass Autocomplete Widget
+  Widget _buildGlassAutocomplete({
+    required String hint,
+    required bool isSource,
+    required Color textColor,
+    required Color subColor,
+    required Color iconColor,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Autocomplete<Map<String, dynamic>>(
+      optionsBuilder: (TextEditingValue text) async {
+        if (text.text.length < 3 || _isSelectingSuggestion) {
+          return const Iterable<Map<String, dynamic>>.empty();
+        }
+
+        // Debounce delay
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (accessToken == null)
+          return const Iterable<Map<String, dynamic>>.empty();
+
+        try {
+          final String proximity = origin != null
+              ? "&proximity=${origin!.coordinates.lng},${origin!.coordinates.lat}"
+              : "";
+          final url = Uri.parse(
+            'https://api.mapbox.com/geocoding/v5/mapbox.places/${Uri.encodeComponent(text.text)}.json'
+            '?access_token=$accessToken&limit=6&country=in$proximity&types=poi,address,neighborhood,place',
+          );
+          final response = await http.get(url);
+          if (response.statusCode == 200 && mounted) {
+            final data = jsonDecode(response.body);
+            final List features = data['features'];
+            return features
+                .map(
+                  (f) => {
+                    'display_name': f['place_name'],
+                    'lat': f['geometry']['coordinates'][1].toString(),
+                    'lon': f['geometry']['coordinates'][0].toString(),
+                  },
+                )
+                .cast<Map<String, dynamic>>();
+          }
+        } catch (e) {
+          debugPrint('Search error: $e');
+        }
+        return const Iterable<Map<String, dynamic>>.empty();
+      },
+      displayStringForOption: (option) => option['display_name'],
+      onSelected: (Map<String, dynamic> selection) {
+        _selectSuggestion(selection, isSource);
+      },
+      fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
+        // Store controller reference for programmatic access (e.g., "Current Location")
+        if (isSource)
+          _sourceTextController = textController;
+        else
+          _destTextController = textController;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.black.withOpacity(0.7)
+                : Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark ? Colors.white24 : Colors.grey.shade300,
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextField(
+            controller: textController,
+            focusNode: focusNode,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(
+                color: subColor.withOpacity(0.7),
+                fontSize: 12,
+              ),
+              prefixIcon: Icon(
+                Icons.location_on_outlined,
+                color: iconColor,
+                size: 16,
+              ),
+              suffixIcon: textController.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.clear_rounded,
+                        size: 14,
+                        color: subColor,
+                      ),
+                      onPressed: () {
+                        textController.clear();
+                        if (!isSource) _clearRoute();
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      splashRadius: 20,
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              isDense: true,
+            ),
+            onSubmitted: (value) => onFieldSubmitted(),
+          ),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              constraints: const BoxConstraints(maxHeight: 200),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[900]! : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isDark ? Colors.white24 : Colors.grey.shade300,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (context, index) {
+                    final option = options.elementAt(index);
+                    return ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      leading: Icon(
+                        Icons.location_on,
+                        size: 16,
+                        color: iconColor,
+                      ),
+                      title: Text(
+                        option['display_name'],
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white : Colors.black,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      onTap: () => onSelected(option),
+                      tileColor: isDark
+                          ? Colors.white.withOpacity(0.05)
+                          : Colors.black.withOpacity(0.03),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     _isDarkMode = isDark;
@@ -889,13 +994,12 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           // 3. Loading Indicator
           if (isLoading) const Center(child: CircularProgressIndicator()),
 
-          // ✅ MOVED UP: Route Selection Card (Now BELOW search bar in Z-order)
-          // By placing this EARLIER in the list, it sits BEHIND the search bar
+          // 4. Route Selection Card
           if (_routeOptions.length > 1 &&
               destination != null &&
               !_isJourneyActive)
             Positioned(
-              top: 130, // Adjusted top to sit nicely below search
+              top: 130,
               left: 16,
               right: 16,
               child: ClipRRect(
@@ -921,7 +1025,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '🗺️ Choose Route',
+                          'Choose Route',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -1017,7 +1121,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
               ),
             ),
 
-          //  NOW ON TOP: Search Bars (Painted LAST = Visible on Top)
+          // ✅ 5. Search Bars (Autocomplete - Painted LAST = Visible on Top)
           Positioned(
             top: 50,
             left: 16,
@@ -1025,16 +1129,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             child: Row(
               children: [
                 Expanded(
-                  child: _buildCompactSearchField(
-                    controller: _sourceController,
+                  child: _buildGlassAutocomplete(
                     hint: "From",
-                    suggestions: _sourceSuggestions,
-                    visible: _showSourceSuggestions,
-                    onSelect: (p) => _selectSuggestion(p, true),
-                    onClear: () => setState(() {
-                      _showSourceSuggestions = false;
-                      _sourceSuggestions = [];
-                    }),
+                    isSource: true,
                     textColor: textColorMain,
                     subColor: textColorSub,
                     iconColor: iconColor,
@@ -1042,19 +1139,9 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _buildCompactSearchField(
-                    controller: _destController,
+                  child: _buildGlassAutocomplete(
                     hint: "To",
-                    suggestions: _destSuggestions,
-                    visible: _showDestSuggestions,
-                    onSelect: (p) => _selectSuggestion(p, false),
-                    onClear: () {
-                      setState(() {
-                        _showDestSuggestions = false;
-                        _destSuggestions = [];
-                      });
-                      _clearRoute();
-                    },
+                    isSource: false,
                     textColor: textColorMain,
                     subColor: textColorSub,
                     iconColor: iconColor,
@@ -1064,7 +1151,7 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
             ),
           ),
 
-          // 6. Bottom Action Area (SOS + Risk Toggle + Start Button)
+          // 6. Bottom Action Area
           Positioned(
             bottom: 20,
             left: 16,
@@ -1204,125 +1291,6 @@ class _MapboxSafeRouteState extends State<MapboxSafeRoute> {
           ),
         ],
       ),
-    );
-  }
-
-  //  New Compact Search Field Widget
-    //  MINIMAL FIX: Keeps your structure, forces Black text, prevents shift
-    //  FINAL VERSION: Theme-aware Glass Inputs + Black Text + No Shift
-  Widget _buildCompactSearchField({
-    required TextEditingController controller,
-    required String hint,
-    required List<Map<String, dynamic>> suggestions,
-    required bool visible,
-    required Function(Map<String, dynamic>) onSelect,
-    required VoidCallback onClear,
-    required Color textColor,
-    required Color subColor,
-    required Color iconColor,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 1. Input Box (Glass Style matching your UI)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          decoration: BoxDecoration(
-            //  Dynamic Glass Color
-            color: isDark
-                ? Colors.black.withOpacity(0.7)
-                : Colors.white.withOpacity(0.95),
-            borderRadius: BorderRadius.circular(12),
-            //  Subtle Border
-            border: Border.all(
-              color: isDark ? Colors.white24 : Colors.grey.shade300,
-              width: 1,
-            ),
-            //  Soft Shadow
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: TextField(
-            controller: controller,
-            style: TextStyle(
-              color: textColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(
-                color: subColor.withOpacity(0.7),
-                fontSize: 12,
-              ),
-              prefixIcon: Icon(
-                Icons.location_on_outlined,
-                color: iconColor,
-                size: 16,
-              ),
-              suffixIcon: controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: Icon(
-                        Icons.clear_rounded,
-                        size: 14,
-                        color: subColor,
-                      ),
-                      onPressed: onClear,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      splashRadius: 20,
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 4),
-              isDense: true,
-            ),
-          ),
-        ),
-        // 2. Suggestions List
-        if (visible && suggestions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            constraints: const BoxConstraints(maxHeight: 150),
-            decoration: BoxDecoration(
-              color: Colors.white, // Solid white for readability
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: ListView.builder(
-                shrinkWrap: true,
-                physics: const ClampingScrollPhysics(),
-                itemCount: suggestions.length,
-                itemBuilder: (ctx, i) => ListTile(
-                  dense: true,
-                  leading: Icon(Icons.location_on, size: 16, color: iconColor),
-                  title: Text(
-                    suggestions[i]['display_name'],
-                    //  Force Black Text
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Colors.black,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  onTap: () => onSelect(suggestions[i]),
-                ),
-              ),
-            ),
-          ),
-      ],
     );
   }
 
