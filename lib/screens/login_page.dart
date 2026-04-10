@@ -154,7 +154,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 40),
               
-              // 👤 Name Field (Only for Sign Up)
+              //  Name Field (Only for Sign Up)
               if (_isSigningUp) ...[
                 TextFormField(
                   controller: _nameController,

@@ -18,8 +18,8 @@ class _ProfilePageState extends State<ProfilePage> {
   String _userName = "User";
   String _userEmail = "user@example.com";
 
-  // ✅ MOCK LIVE SHARING STATE
-  bool _isLiveSharingEnabled = false;
+  //  MOCK LIVE SHARING STATE
+  // bool _isLiveSharingEnabled = false;
   bool _isLoading = false;
 
   // Simulate Login
@@ -49,49 +49,48 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   // Simulate Logout
-  Future<void> _handleLogout() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
+Future<void> _handleLogout() async {
+  setState(() => _isLoading = true);
+  await Future.delayed(const Duration(milliseconds: 500));
 
-    setState(() {
-      _isLoggedIn = false;
-      _isLiveSharingEnabled = false;
-      _isLoading = false;
-    });
+  setState(() {
+    _isLoggedIn = false;
+    _isLoading = false;
+  });
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Successfully signed out'),
-          backgroundColor: Colors.grey,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Successfully signed out'),
+        backgroundColor: Colors.grey,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
-      );
-    }
+      ),
+    );
   }
+}
 
-  void _toggleLiveSharing(bool value) {
-    if (!_isLoggedIn && value) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Please sign in to enable Live Location Sharing'),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      );
-      return;
-    }
+  // void _toggleLiveSharing(bool value) {
+  //   if (!_isLoggedIn && value) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(
+  //         content: const Text('Please sign in to enable Live Location Sharing'),
+  //         backgroundColor: Colors.orange,
+  //         behavior: SnackBarBehavior.floating,
+  //         shape: RoundedRectangleBorder(
+  //           borderRadius: BorderRadius.circular(12),
+  //         ),
+  //       ),
+  //     );
+  //     return;
+  //   }
 
-    setState(() {
-      _isLiveSharingEnabled = value;
-    });
-  }
+  //   setState(() {
+  //     _isLiveSharingEnabled = value;
+  //   });
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -328,73 +327,73 @@ class _ProfilePageState extends State<ProfilePage> {
                         ],
 
                         // 4. Live Location Sharing
-                        _buildGlassCard(
-                          glassColor: glassColor,
-                          borderColor: borderColor,
-                          isDark: isDark,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.share_location,
-                                    color: accentColor,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Real-Time Location Sharing',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      color: textColorMain,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Allow trusted contacts to see your live location during active journeys.',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: textColorSub,
-                                  height: 1.4,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    _isLiveSharingEnabled
-                                        ? 'Enabled'
-                                        : 'Disabled',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: _isLiveSharingEnabled
-                                          ? AppColors.riskGreen
-                                          : textColorSub,
-                                    ),
-                                  ),
-                                  Transform.scale(
-                                    scale: 0.9,
-                                    child: CupertinoSwitch(
-                                      value: _isLiveSharingEnabled,
-                                      onChanged: _isLoggedIn
-                                          ? _toggleLiveSharing
-                                          : null,
-                                      activeColor: accentColor,
-                                      trackColor: Colors.grey.withOpacity(0.3),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
+                        // _buildGlassCard(
+                        //   glassColor: glassColor,
+                        //   borderColor: borderColor,
+                        //   isDark: isDark,
+                        //   child: Column(
+                        //     crossAxisAlignment: CrossAxisAlignment.start,
+                        //     children: [
+                        //       Row(
+                        //         children: [
+                        //           Icon(
+                        //             Icons.share_location,
+                        //             color: accentColor,
+                        //             size: 24,
+                        //           ),
+                        //           const SizedBox(width: 12),
+                        //           Text(
+                        //             'Real-Time Location Sharing',
+                        //             style: TextStyle(
+                        //               fontWeight: FontWeight.bold,
+                        //               fontSize: 16,
+                        //               color: textColorMain,
+                        //             ),
+                        //           ),
+                        //         ],
+                        //       ),
+                        //       const SizedBox(height: 12),
+                        //       Text(
+                        //         'Allow trusted contacts to see your live location during active journeys.',
+                        //         style: TextStyle(
+                        //           fontSize: 13,
+                        //           color: textColorSub,
+                        //           height: 1.4,
+                        //         ),
+                        //       ),
+                        //       const SizedBox(height: 16),
+                        //       Row(
+                        //         mainAxisAlignment:
+                        //             MainAxisAlignment.spaceBetween,
+                        //         children: [
+                        //           Text(
+                        //             _isLiveSharingEnabled
+                        //                 ? 'Enabled'
+                        //                 : 'Disabled',
+                        //             style: TextStyle(
+                        //               fontWeight: FontWeight.w600,
+                        //               color: _isLiveSharingEnabled
+                        //                   ? AppColors.riskGreen
+                        //                   : textColorSub,
+                        //             ),
+                        //           ),
+                        //           Transform.scale(
+                        //             scale: 0.9,
+                        //             child: CupertinoSwitch(
+                        //               value: _isLiveSharingEnabled,
+                        //               onChanged: _isLoggedIn
+                        //                   ? _toggleLiveSharing
+                        //                   : null,
+                        //               activeColor: accentColor,
+                        //               trackColor: Colors.grey.withOpacity(0.3),
+                        //             ),
+                        //           ),
+                        //         ],
+                        //       ),
+                        //     ],
+                        //   ),
+                        // ),
+                        // const SizedBox(height: 24),
 
                         // 5. Appearance
                         _buildGlassCard(

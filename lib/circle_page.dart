@@ -219,48 +219,52 @@ class _CirclePageState extends State<CirclePage> {
                       ),
                     ),
                     const Divider(height: 1, color: Colors.white24),
-                    SizedBox(
-                      width: double.maxFinite,
-                      height: MediaQuery.of(context).size.height * 0.5,
-                      child: filteredContacts.isEmpty
-                          ? Center(
-                              child: Text(
-                                'No contacts found',
-                                style: TextStyle(color: subColor),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: filteredContacts.length,
-                              itemBuilder: (context, index) {
-                                final contact = filteredContacts[index];
-                                final name = contact.displayName ?? 'Unknown';
-                                final phone = contact.phones.isNotEmpty == true
-                                    ? contact.phones![0].number
-                                    : 'No number';
+                    // ✅ Fixed: Flexible + Constrained to prevent overflow
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.5,
+                        ),
+                        child: filteredContacts.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'No contacts found',
+                                  style: TextStyle(color: subColor),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: filteredContacts.length,
+                                itemBuilder: (context, index) {
+                                  final contact = filteredContacts[index];
+                                  final name = contact.displayName ?? 'Unknown';
+                                  final phone = contact.phones.isNotEmpty == true
+                                      ? contact.phones![0].number
+                                      : 'No number';
 
-                                return ListTile(
-                                  title: Text(
-                                    name,
-                                    style: TextStyle(
-                                      color: textColor,
-                                      fontWeight: FontWeight.w600,
+                                  return ListTile(
+                                    title: Text(
+                                      name,
+                                      style: TextStyle(
+                                        color: textColor,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                  subtitle: Text(
-                                    phone,
-                                    style: TextStyle(
-                                      color: subColor,
-                                      fontSize: 12,
+                                    subtitle: Text(
+                                      phone,
+                                      style: TextStyle(
+                                        color: subColor,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
-                                  onTap: () {
-                                    Navigator.of(context, rootNavigator: false)
-                                        .pop();
-                                    _selectContact(contact);
-                                  },
-                                );
-                              },
-                            ),
+                                    onTap: () {
+                                      Navigator.of(context, rootNavigator: false)
+                                          .pop();
+                                      _selectContact(contact);
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
                     ),
                   ],
                 ),
