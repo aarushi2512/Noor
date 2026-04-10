@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'dart:ui'; // For BackdropFilter
+import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
+import 'package:noor_new/theme/app_colors.dart';
 import '../providers/auth_provider.dart';
-import '../theme/app_colors.dart';
 
 class CirclePage extends StatefulWidget {
   const CirclePage({super.key});
@@ -11,284 +16,536 @@ class CirclePage extends StatefulWidget {
 }
 
 class _CirclePageState extends State<CirclePage> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _relationshipController = TextEditingController();
+  List<Contact> _trustedContacts = [];
+  bool _isLoading = false;
 
-  bool _isAdding = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
-    _relationshipController.dispose();
-    super.dispose();
+  // 🔧 Core Logic: Normalize Phone Number
+  String _normalizePhone(String raw) {
+    String digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 10) {
+      String last10 = digits.substring(digits.length - 10);
+      return '+91$last10';
+    }
+    return raw.startsWith('+') ? raw : '+91$digits';
   }
 
-  // ✅ ADD CONTACT TO CLOUD (Firebase)
-  Future<void> _addContact() async {
-    if (!_formKey.currentState!.validate()) return;
-    
-    setState(() => _isAdding = true);
-    
+  @override
+  void initState() {
+    super.initState();
+    _loadTrustedContacts();
+  }
+
+  // ✅ Load contacts from Firebase Cloud (with local fallback)
+  Future<void> _loadTrustedContacts() async {
+    setState(() => _isLoading = true);
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final result = await authProvider.addContact(
-        _nameController.text.trim(),
-        _phoneController.text.trim(),
-        _relationshipController.text.trim(),
-      );
       
-      if (result == 'success') {
-        // Clear form
-        _nameController.clear();
-        _phoneController.clear();
-        _relationshipController.clear();
+      // If user is logged in, try to load from Firebase
+      if (authProvider.isSignedIn) {
+        final snapshot = await authProvider.getContacts().first;
+        final contacts = snapshot.docs;
         
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Contact saved to cloud!'),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+        if (contacts.isNotEmpty) {
+          final loadedContacts = contacts.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            // Create a minimal Contact object for display
+            return Contact(
+              displayName: data['name'] ?? 'Unknown',
+              phones: [Phone(_normalizePhone(data['phone'] ?? ''))],
+            );
+          }).toList();
+          
+          if (mounted) {
+            setState(() => _trustedContacts = loadedContacts);
+          }
+          return; // Done - loaded from cloud
         }
-      } else {
+      }
+      
+      // Fallback: Load from local SharedPreferences (for offline/old data)
+      final prefs = await SharedPreferences.getInstance();
+      final contactIds = prefs.getStringList('trusted_contact_ids') ?? [];
+      
+      if (contactIds.isNotEmpty) {
+        final contacts = await FlutterContacts.getContacts(
+          withProperties: true,
+          withThumbnail: false,
+        );
+        final trusted = contacts
+            .where((contact) =>
+                contact.id != null && contactIds.contains(contact.id!))
+            .toList();
+        if (mounted) {
+          setState(() => _trustedContacts = trusted);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading contacts: $e');
+    }
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // ✅ Add Contact: Opens Phone Contacts App
+  Future<void> _addContact() async {
+    final status = await Permission.contacts.status;
+    if (!status.isGranted) {
+      final result = await Permission.contacts.request();
+      if (!result.isGranted) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('❌ $result'),
-              backgroundColor: Colors.red,
+              content: const Text('Contacts permission required'),
+              backgroundColor: AppColors.riskOrange,
               behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           );
         }
+        return;
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isAdding = false);
     }
-  }
 
-  // ✅ DELETE CONTACT FROM CLOUD
-  Future<void> _deleteContact(String contactId) async {
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final result = await authProvider.deleteContact(contactId);
-      
-      if (result == 'success' && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Contact removed from cloud'),
-            backgroundColor: Colors.grey,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      final contacts = await FlutterContacts.getContacts(
+        withProperties: true,
+        withThumbnail: false,
+      );
+
+      final contactsWithPhones = contacts
+          .where((c) =>
+              c.phones != null &&
+              c.phones!.isNotEmpty &&
+              c.phones!.any((p) => p.number.trim().isNotEmpty))
+          .toList();
+
+      if (contactsWithPhones.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('No contacts have phone numbers'),
+              backgroundColor: AppColors.secondaryTaupe,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+        return;
       }
+
+      _showContactSelectionDialog(contactsWithPhones);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: const Text('Failed to load contacts'),
+            backgroundColor: AppColors.riskRed,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
     }
   }
 
-  // ✅ SHOW ADD CONTACT DIALOG
-  void _showAddDialog(Color glassColor, Color textMain, Color textSub, Color accent) {
+  // ✅ Show Contact Selection Dialog (Your Original Beautiful UI)
+  void _showContactSelectionDialog(List<Contact> allContacts) {
+    List<Contact> filteredContacts = List.from(allContacts);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glassColor = isDark ? AppColors.glassDark : AppColors.glassLight;
+    final textColor = isDark ? AppColors.textDarkMain : AppColors.textLightMain;
+    final subColor = isDark ? AppColors.textDarkSub : AppColors.textLightSub;
+    final borderColor = Colors.white.withOpacity(0.2);
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: glassColor,
-        title: Text('Add Trusted Contact', style: TextStyle(color: textMain)),
-        content: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: _nameController,
-                  style: TextStyle(color: textMain),
-                  decoration: InputDecoration(
-                    labelText: 'Full Name',
-                    labelStyle: TextStyle(color: textSub),
-                    prefixIcon: Icon(Icons.person, color: accent),
-                  ),
-                  validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+      useRootNavigator: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          contentPadding: EdgeInsets.zero,
+          content: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: glassColor,
+                  border: Border.all(color: borderColor),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  style: TextStyle(color: textMain),
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    labelStyle: TextStyle(color: textSub),
-                    prefixIcon: Icon(Icons.phone, color: accent),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Required';
-                    if (v.length < 10) return 'Enter valid phone';
-                    return null;
-                  },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          hintText: 'Search contacts...',
+                          hintStyle: TextStyle(color: subColor),
+                          prefixIcon: Icon(Icons.search, color: subColor),
+                          filled: true,
+                          fillColor: Colors.black.withOpacity(0.05),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                        style: TextStyle(color: textColor),
+                        onChanged: (query) {
+                          final filtered = allContacts.where((contact) {
+                            final name = contact.displayName?.toLowerCase() ?? '';
+                            final phone = contact.phones.isNotEmpty == true
+                                ? contact.phones![0].number.toLowerCase()
+                                : '';
+                            return name.contains(query.toLowerCase()) ||
+                                phone.contains(query.toLowerCase());
+                          }).toList();
+                          setState(() => filteredContacts = filtered);
+                        },
+                      ),
+                    ),
+                    const Divider(height: 1, color: Colors.white24),
+                    SizedBox(
+                      width: double.maxFinite,
+                      height: MediaQuery.of(context).size.height * 0.5,
+                      child: filteredContacts.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No contacts found',
+                                style: TextStyle(color: subColor),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: filteredContacts.length,
+                              itemBuilder: (context, index) {
+                                final contact = filteredContacts[index];
+                                final name = contact.displayName ?? 'Unknown';
+                                final phone = contact.phones.isNotEmpty == true
+                                    ? contact.phones![0].number
+                                    : 'No number';
+
+                                return ListTile(
+                                  title: Text(
+                                    name,
+                                    style: TextStyle(
+                                      color: textColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    phone,
+                                    style: TextStyle(
+                                      color: subColor,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  onTap: () {
+                                    Navigator.of(context, rootNavigator: false)
+                                        .pop();
+                                    _selectContact(contact);
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _relationshipController,
-                  style: TextStyle(color: textMain),
-                  decoration: InputDecoration(
-                    labelText: 'Relationship (e.g., Mom, Friend)',
-                    labelStyle: TextStyle(color: textSub),
-                    prefixIcon: Icon(Icons.family_restroom, color: accent),
-                  ),
-                  validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                ),
-              ],
+              ),
             ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _nameController.clear();
-              _phoneController.clear();
-              _relationshipController.clear();
-            },
-            child: Text('Cancel', style: TextStyle(color: textSub)),
-          ),
-          ElevatedButton(
-            onPressed: _isAdding ? null : () async {
-              if (_formKey.currentState!.validate()) {
-                Navigator.pop(ctx);
-                await _addContact();
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: accent,
-              foregroundColor: Colors.white,
-            ),
-            child: _isAdding 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Save'),
-          ),
-        ],
       ),
     );
+  }
+
+  // ✅ Select Contact: Save to Firebase Cloud + Local Storage
+  Future<void> _selectContact(Contact contact) async {
+    final prefs = await SharedPreferences.getInstance();
+    final existingIds = prefs.getStringList('trusted_contact_ids') ?? [];
+    final existingPhones = prefs.getStringList('emergency_contact_phones') ?? [];
+
+    final contactId = contact.id;
+    if (contactId != null && !existingIds.contains(contactId)) {
+      // 1. Save to local SharedPreferences (for offline access)
+      existingIds.add(contactId);
+      await prefs.setStringList('trusted_contact_ids', existingIds);
+
+      if (contact.phones.isNotEmpty == true) {
+        String normalized = _normalizePhone(contact.phones![0].number);
+        final existingNormalized = existingPhones.map(_normalizePhone).toSet();
+
+        if (!existingNormalized.contains(normalized)) {
+          existingPhones.add(normalized);
+          await prefs.setStringList(
+            'emergency_contact_phones',
+            existingPhones.take(2).toList(), // Keep max 2 emergency contacts
+          );
+        }
+      }
+
+      // 2. Save to Firebase Cloud (for cross-device sync)
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.isSignedIn) {
+        await authProvider.addContact(
+          contact.displayName ?? 'Unknown',
+          contact.phones.isNotEmpty == true ? contact.phones![0].number : '',
+          'Trusted Contact', // Default relationship
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          _trustedContacts.add(contact);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${contact.displayName ?? 'Contact'} added'),
+            backgroundColor: AppColors.riskGreen,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  // ✅ Remove Contact: Delete from Firebase + Local
+  Future<void> _removeContact(Contact contact) async {
+    final prefs = await SharedPreferences.getInstance();
+    final existingIds = prefs.getStringList('trusted_contact_ids') ?? [];
+    final existingPhones = prefs.getStringList('emergency_contact_phones') ?? [];
+
+    if (contact.id != null) {
+      existingIds.remove(contact.id!);
+      await prefs.setStringList('trusted_contact_ids', existingIds);
+    }
+
+    if (contact.phones.isNotEmpty == true) {
+      final contactNormalizedPhones = contact.phones!
+          .map((p) => _normalizePhone(p.number))
+          .toSet();
+      existingPhones.removeWhere(
+        (storedPhone) =>
+            contactNormalizedPhones.contains(_normalizePhone(storedPhone)),
+      );
+      await prefs.setStringList(
+        'emergency_contact_phones',
+        existingPhones.take(2).toList(),
+      );
+    }
+
+    // Delete from Firebase Cloud
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (authProvider.isSignedIn) {
+      // Find the contact in Firebase and delete it
+      final snapshot = await authProvider.getContacts().first;
+      for (var doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        if (data['phone'] == (contact.phones.isNotEmpty == true ? contact.phones![0].number : '')) {
+          await authProvider.deleteContact(doc.id);
+          break;
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _trustedContacts.remove(contact);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${contact.displayName ?? 'Contact'} removed'),
+          backgroundColor: AppColors.riskRed,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
+
+  // ✅ CORE FUNCTION: Reset All Contacts
+  Future<void> _resetContacts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('trusted_contact_ids');
+    await prefs.remove('emergency_contact_phones');
+    
+    // Clear from Firebase too
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (authProvider.isSignedIn) {
+      final snapshot = await authProvider.getContacts().first;
+      for (var doc in snapshot.docs) {
+        await authProvider.deleteContact(doc.id);
+      }
+    }
+    
+    if (mounted) {
+      setState(() {
+        _trustedContacts.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('All contacts reset successfully'),
+          backgroundColor: AppColors.secondaryTaupe,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    // Dynamic Colors
-    final bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: isDark
-          ? [AppColors.bgDarkStart, AppColors.bgDarkEnd]
-          : [AppColors.bgLightStart, AppColors.bgLightEnd],
-    );
+
+    // Dynamic Theme Colors
     final glassColor = isDark ? AppColors.glassDark : AppColors.glassLight;
-    final textColorMain = isDark ? AppColors.textDarkMain : AppColors.textLightMain;
-    final textColorSub = isDark ? AppColors.textDarkSub : AppColors.textLightSub;
-    final accentColor = isDark ? AppColors.primaryBurgundyDark : AppColors.primaryBurgundyLight;
+    final textColorMain = isDark
+        ? AppColors.textDarkMain
+        : AppColors.textLightMain;
+    final textColorSub = isDark
+        ? AppColors.textDarkSub
+        : AppColors.textLightSub;
+    final accentColor = isDark
+        ? AppColors.primaryBurgundyDark
+        : AppColors.primaryBurgundyLight;
+    final borderColor = Colors.white.withOpacity(0.2);
 
     return Scaffold(
       body: Stack(
         children: [
-          // Background
-          Container(decoration: BoxDecoration(gradient: bgGradient)),
-          
-          // Content
+          // ✅ 1. BLURRED BACKGROUND IMAGE (Your Original Design)
+          ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: 20,
+                sigmaY: 20,
+              ), // Strong blur for readability
+              child: Container(
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage(
+                      isDark ? AppColors.bgDarkImage : AppColors.bgLightImage,
+                    ),
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                    // Optional: Slight overlay to ensure text contrast
+                    colorFilter: ColorFilter.mode(
+                      isDark
+                          ? Colors.black.withOpacity(0.3)
+                          : Colors.white.withOpacity(0.2),
+                      BlendMode.softLight,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // ✅ 2. Extra Overlay for Readability
+          Container(
+            color: isDark
+                ? Colors.black.withOpacity(0.4)
+                : Colors.white.withOpacity(0.3),
+          ),
+
+          // ✅ 3. Content
           SafeArea(
             child: Column(
               children: [
-                // Header
+                // --- Custom Glass AppBar ---
                 Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Trusted Circle',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: textColorMain,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: glassColor,
+                          border: Border.all(color: borderColor),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'My Circle',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: textColorMain,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.add, color: accentColor),
+                                  onPressed: _addContact,
+                                  tooltip: 'Add Contact',
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.refresh,
+                                    color: AppColors.secondaryTaupe,
+                                  ),
+                                  onPressed: _resetContacts,
+                                  tooltip: 'Reset All Contacts',
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle),
-                        color: accentColor,
-                        onPressed: authProvider.isSignedIn 
-                            ? () => _showAddDialog(glassColor, textColorMain, textColorSub, accentColor)
-                            : null,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                
-                // Login Prompt or Contacts List
+
+                // --- List or Empty State ---
                 Expanded(
-                  child: !authProvider.isSignedIn
-                      ? _buildLoginPrompt(glassColor, textColorMain, textColorSub, accentColor)
-                      : StreamBuilder(
-                          stream: authProvider.getContacts(),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
-                            }
-                            if (snapshot.hasError) {
-                              return Center(
-                                child: Text(
-                                  'Error: ${snapshot.error}',
-                                  style: TextStyle(color: textColorSub),
-                                ),
-                              );
-                            }
-                            
-                            final contacts = snapshot.data?.docs ?? [];
-                            if (contacts.isEmpty) {
-                              return _buildEmptyState(glassColor, textColorMain, textColorSub);
-                            }
-                            
-                            return ListView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              itemCount: contacts.length,
-                              itemBuilder: (ctx, i) {
-                                final contact = contacts[i].data() as Map<String, dynamic>;
-                                final contactId = contacts[i].id;
-                                
-                                return _buildContactCard(
-                                  name: contact['name'] ?? 'Unknown',
-                                  relationship: contact['relationship'] ?? '',
-                                  phone: contact['phone'] ?? '',
-                                  onDelete: () => _deleteContact(contactId),
-                                  glassColor: glassColor,
-                                  textColorMain: textColorMain,
-                                  textColorSub: textColorSub,
-                                  accentColor: accentColor,
-                                );
-                              },
-                            );
-                          },
-                        ),
+                  child: _isLoading
+                      ? Center(
+                          child: CircularProgressIndicator(color: accentColor),
+                        )
+                      : _trustedContacts.isEmpty
+                          ? _buildEmptyState(
+                              glassColor,
+                              borderColor,
+                              textColorMain,
+                              textColorSub,
+                              accentColor,
+                            )
+                          : _buildContactList(
+                              glassColor,
+                              borderColor,
+                              textColorMain,
+                              textColorSub,
+                              accentColor,
+                            ),
                 ),
               ],
             ),
@@ -298,132 +555,158 @@ class _CirclePageState extends State<CirclePage> {
     );
   }
 
-  // 🔒 Login Prompt Widget
-  Widget _buildLoginPrompt(Color glassColor, Color textMain, Color textSub, Color accent) {
+  // ✅ Empty State Widget (Your Original Design)
+  Widget _buildEmptyState(
+    Color glassColor,
+    Color borderColor,
+    Color textMain,
+    Color textSub,
+    Color accent,
+  ) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.lock_outline, size: 64, color: accent),
-            const SizedBox(height: 24),
-            Text(
-              'Sign In to Save Contacts',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textMain),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Your trusted contacts are saved to the cloud. Sign in to access them on any device.',
-              style: TextStyle(fontSize: 13, color: textSub),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                // Navigate to login (adjust path as needed)
-                // For now, we'll just show a message
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please sign in from Profile page')),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: accent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            child: Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: glassColor,
+                border: Border.all(color: borderColor),
+                borderRadius: BorderRadius.circular(24),
               ),
-              child: const Text('Sign In'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 📭 Empty State Widget
-  Widget _buildEmptyState(Color glassColor, Color textMain, Color textSub) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.person_add, size: 64, color: textSub),
-            const SizedBox(height: 24),
-            Text(
-              'No Trusted Contacts Yet',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textMain),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Add your first trusted contact to start saving them to the cloud.',
-              style: TextStyle(fontSize: 13, color: textSub),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => _showAddDialog(glassColor, textMain, textSub, textMain),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Contact'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: textMain,
-                foregroundColor: Colors.white,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.people_outline,
+                    size: 64,
+                    color: accent.withOpacity(0.5),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'No Trusted Contacts',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: textMain,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap the + icon to add trusted friends or family',
+                    style: TextStyle(fontSize: 14, color: textSub, height: 1.4),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _addContact,
+                    icon: const Icon(Icons.person_add, size: 20),
+                    label: const Text('Add First Contact'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 👤 Contact Card Widget
-  Widget _buildContactCard({
-    required String name,
-    required String relationship,
-    required String phone,
-    required VoidCallback onDelete,
-    required Color glassColor,
-    required Color textColorMain,
-    required Color textColorSub,
-    required Color accentColor,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: glassColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
           ),
-        ],
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: CircleAvatar(
-          backgroundColor: accentColor.withOpacity(0.2),
-          child: Icon(Icons.person, color: accentColor),
-        ),
-        title: Text(
-          name,
-          style: TextStyle(fontWeight: FontWeight.bold, color: textColorMain),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(relationship, style: TextStyle(color: textColorSub, fontSize: 12)),
-            Text(phone, style: TextStyle(color: textColorSub, fontSize: 12)),
-          ],
-        ),
-        trailing: IconButton(
-          icon: Icon(Icons.delete_outline, color: AppColors.riskRed),
-          onPressed: onDelete,
         ),
       ),
+    );
+  }
+
+  // ✅ Contact List Widget (Your Original Beautiful Cards)
+  Widget _buildContactList(
+    Color glassColor,
+    Color borderColor,
+    Color textMain,
+    Color textSub,
+    Color accent,
+  ) {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      itemCount: _trustedContacts.length,
+      itemBuilder: (context, index) {
+        final contact = _trustedContacts[index];
+        final name = contact.displayName ?? 'Unknown';
+        final phone = contact.phones.isNotEmpty == true
+            ? contact.phones![0].number
+            : 'No phone';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: glassColor,
+                  border: Border.all(color: borderColor),
+                ),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  leading: CircleAvatar(
+                    backgroundColor: accent.withOpacity(0.15),
+                    child: Text(
+                      (name.isNotEmpty ? name[0] : 'U').toUpperCase(),
+                      style: TextStyle(
+                        color: accent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: textMain,
+                    ),
+                  ),
+                  subtitle: Text(
+                    phone,
+                    style: TextStyle(color: textSub, fontSize: 13),
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(
+                      Icons.delete_outline,
+                      color: AppColors.riskRed.withOpacity(0.8),
+                    ),
+                    onPressed: () => _removeContact(contact),
+                    tooltip: 'Remove',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
