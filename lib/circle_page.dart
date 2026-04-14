@@ -40,12 +40,12 @@ class _CirclePageState extends State<CirclePage> {
     setState(() => _isLoading = true);
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      
+
       // If user is logged in, try to load from Firebase
       if (authProvider.isSignedIn) {
         final snapshot = await authProvider.getContacts().first;
         final contacts = snapshot.docs;
-        
+
         if (contacts.isNotEmpty) {
           final loadedContacts = contacts.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
@@ -55,26 +55,28 @@ class _CirclePageState extends State<CirclePage> {
               phones: [Phone(_normalizePhone(data['phone'] ?? ''))],
             );
           }).toList();
-          
+
           if (mounted) {
             setState(() => _trustedContacts = loadedContacts);
           }
           return; // Done - loaded from cloud
         }
       }
-      
+
       // Fallback: Load from local SharedPreferences (for offline/old data)
       final prefs = await SharedPreferences.getInstance();
       final contactIds = prefs.getStringList('trusted_contact_ids') ?? [];
-      
+
       if (contactIds.isNotEmpty) {
         final contacts = await FlutterContacts.getContacts(
           withProperties: true,
           withThumbnail: false,
         );
         final trusted = contacts
-            .where((contact) =>
-                contact.id != null && contactIds.contains(contact.id!))
+            .where(
+              (contact) =>
+                  contact.id != null && contactIds.contains(contact.id!),
+            )
             .toList();
         if (mounted) {
           setState(() => _trustedContacts = trusted);
@@ -117,10 +119,12 @@ class _CirclePageState extends State<CirclePage> {
       );
 
       final contactsWithPhones = contacts
-          .where((c) =>
-              c.phones != null &&
-              c.phones!.isNotEmpty &&
-              c.phones!.any((p) => p.number.trim().isNotEmpty))
+          .where(
+            (c) =>
+                c.phones != null &&
+                c.phones!.isNotEmpty &&
+                c.phones!.any((p) => p.number.trim().isNotEmpty),
+          )
           .toList();
 
       if (contactsWithPhones.isEmpty) {
@@ -207,7 +211,8 @@ class _CirclePageState extends State<CirclePage> {
                         style: TextStyle(color: textColor),
                         onChanged: (query) {
                           final filtered = allContacts.where((contact) {
-                            final name = contact.displayName?.toLowerCase() ?? '';
+                            final name =
+                                contact.displayName?.toLowerCase() ?? '';
                             final phone = contact.phones.isNotEmpty == true
                                 ? contact.phones![0].number.toLowerCase()
                                 : '';
@@ -254,8 +259,10 @@ class _CirclePageState extends State<CirclePage> {
                                     ),
                                   ),
                                   onTap: () {
-                                    Navigator.of(context, rootNavigator: false)
-                                        .pop();
+                                    Navigator.of(
+                                      context,
+                                      rootNavigator: false,
+                                    ).pop();
                                     _selectContact(contact);
                                   },
                                 );
@@ -276,7 +283,8 @@ class _CirclePageState extends State<CirclePage> {
   Future<void> _selectContact(Contact contact) async {
     final prefs = await SharedPreferences.getInstance();
     final existingIds = prefs.getStringList('trusted_contact_ids') ?? [];
-    final existingPhones = prefs.getStringList('emergency_contact_phones') ?? [];
+    final existingPhones =
+        prefs.getStringList('emergency_contact_phones') ?? [];
 
     final contactId = contact.id;
     if (contactId != null && !existingIds.contains(contactId)) {
@@ -329,7 +337,8 @@ class _CirclePageState extends State<CirclePage> {
   Future<void> _removeContact(Contact contact) async {
     final prefs = await SharedPreferences.getInstance();
     final existingIds = prefs.getStringList('trusted_contact_ids') ?? [];
-    final existingPhones = prefs.getStringList('emergency_contact_phones') ?? [];
+    final existingPhones =
+        prefs.getStringList('emergency_contact_phones') ?? [];
 
     if (contact.id != null) {
       existingIds.remove(contact.id!);
@@ -357,7 +366,10 @@ class _CirclePageState extends State<CirclePage> {
       final snapshot = await authProvider.getContacts().first;
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        if (data['phone'] == (contact.phones.isNotEmpty == true ? contact.phones![0].number : '')) {
+        if (data['phone'] ==
+            (contact.phones.isNotEmpty == true
+                ? contact.phones![0].number
+                : '')) {
           await authProvider.deleteContact(doc.id);
           break;
         }
@@ -386,7 +398,7 @@ class _CirclePageState extends State<CirclePage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('trusted_contact_ids');
     await prefs.remove('emergency_contact_phones');
-    
+
     // Clear from Firebase too
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (authProvider.isSignedIn) {
@@ -395,7 +407,7 @@ class _CirclePageState extends State<CirclePage> {
         await authProvider.deleteContact(doc.id);
       }
     }
-    
+
     if (mounted) {
       setState(() {
         _trustedContacts.clear();
@@ -532,20 +544,20 @@ class _CirclePageState extends State<CirclePage> {
                           child: CircularProgressIndicator(color: accentColor),
                         )
                       : _trustedContacts.isEmpty
-                          ? _buildEmptyState(
-                              glassColor,
-                              borderColor,
-                              textColorMain,
-                              textColorSub,
-                              accentColor,
-                            )
-                          : _buildContactList(
-                              glassColor,
-                              borderColor,
-                              textColorMain,
-                              textColorSub,
-                              accentColor,
-                            ),
+                      ? _buildEmptyState(
+                          glassColor,
+                          borderColor,
+                          textColorMain,
+                          textColorSub,
+                          accentColor,
+                        )
+                      : _buildContactList(
+                          glassColor,
+                          borderColor,
+                          textColorMain,
+                          textColorSub,
+                          accentColor,
+                        ),
                 ),
               ],
             ),

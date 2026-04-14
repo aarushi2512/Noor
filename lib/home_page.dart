@@ -666,15 +666,15 @@ class _HomePageContentState extends State<HomePageContent> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Hi, There!',
-                            style: GoogleFonts.dancingScript(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w600,
-                              color: textColorMain,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
+                          // Text(
+                          //   'Hi, There!',
+                          //   style: GoogleFonts.dancingScript(
+                          //     fontSize: 24,
+                          //     fontWeight: FontWeight.w600,
+                          //     color: textColorMain,
+                          //     letterSpacing: 0.5,
+                          //   ),
+                          // ),
                           Text(
                             'Stay safe today',
                             style: TextStyle(
